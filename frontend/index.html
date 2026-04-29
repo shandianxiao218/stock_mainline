@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>A股板块主线雷达</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <h1>A股板块主线雷达</h1>
+            <p>日度复盘工作台</p>
+          </div>
+        </div>
+        <nav>
+          <a class="active" href="#overview">总览</a>
+          <a href="#ranking">主线榜单</a>
+          <a href="#detail">主线详情</a>
+          <a href="#portfolio">持仓风险</a>
+          <a href="#report">复盘报告</a>
+        </nav>
+        <div class="side-note">
+          <span>数据源</span>
+          <strong>Tushare / Demo</strong>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Daily Review</p>
+            <h2>收盘主线雷达</h2>
+          </div>
+          <div class="controls">
+            <input id="dateInput" type="date" value="2026-04-29" aria-label="交易日期">
+            <select id="periodInput" aria-label="交易周期">
+              <option value="short">1-3日</option>
+              <option value="swing">3-7日</option>
+              <option value="mid">1-4周</option>
+            </select>
+            <button id="refreshBtn" type="button">刷新</button>
+            <a id="exportLink" class="button secondary" href="/api/v1/export/themes.xlsx?date=2026-04-29">导出Excel</a>
+          </div>
+        </header>
+
+        <section id="overview" class="metric-grid">
+          <article class="metric">
+            <span>模型置信度</span>
+            <strong id="confidenceLevel">-</strong>
+            <p id="confidenceReason">-</p>
+          </article>
+          <article class="metric">
+            <span>全市场状态</span>
+            <strong id="marketState">-</strong>
+            <p id="marketSummary">-</p>
+          </article>
+          <article class="metric">
+            <span>高风险主线</span>
+            <strong id="riskCount">-</strong>
+            <p id="riskSummary">-</p>
+          </article>
+        </section>
+
+        <section id="ranking" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Ranking</p>
+              <h3>主线榜单</h3>
+            </div>
+            <span id="rankingMeta"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>主线</th>
+                  <th>主线分</th>
+                  <th>热度</th>
+                  <th>延续性</th>
+                  <th>风险</th>
+                  <th>状态</th>
+                  <th>强分支</th>
+                </tr>
+              </thead>
+              <tbody id="rankingBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="detail" class="detail-grid">
+          <article class="panel">
+            <div class="panel-title">
+              <div>
+                <p class="eyebrow">Detail</p>
+                <h3 id="detailTitle">主线详情</h3>
+              </div>
+              <span id="detailStatus"></span>
+            </div>
+            <div id="scoreBars" class="score-bars"></div>
+            <div class="split-list">
+              <div>
+                <h4>强分支</h4>
+                <div id="branches" class="chips"></div>
+              </div>
+              <div>
+                <h4>核心股</h4>
+                <div id="coreStocks" class="chips"></div>
+              </div>
+            </div>
+            <p id="modelExplanation" class="explain"></p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-title">
+              <div>
+                <p class="eyebrow">Risk</p>
+                <h3>风险信号</h3>
+              </div>
+            </div>
+            <div id="riskList" class="risk-list"></div>
+          </article>
+        </section>
+
+        <section id="portfolio" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Exposure</p>
+              <h3>自选股与持仓风险</h3>
+            </div>
+            <span id="portfolioSummary"></span>
+          </div>
+          <div class="portfolio-grid">
+            <div>
+              <h4>自选股</h4>
+              <div id="watchlist" class="stock-list"></div>
+            </div>
+            <div>
+              <h4>持仓</h4>
+              <div id="positions" class="stock-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="report" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Report</p>
+              <h3>自然语言复盘</h3>
+            </div>
+            <button id="backtestBtn" type="button" class="secondary">运行5年回测样例</button>
+          </div>
+          <p id="reportText" class="report-text"></p>
+          <pre id="backtestResult" class="backtest-result"></pre>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
+

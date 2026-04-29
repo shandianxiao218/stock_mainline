@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+server.out.log
+server.err.log
+.env
+.venv/
+node_modules/
+dist/
+
