@@ -16,6 +16,7 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
+from review_store import save_daily_review
 
 try:
     from real_scoring import backtest_result, daily_report, db_ready, detail_payload, find_theme, portfolio_risk, ranking_payload
@@ -70,6 +71,8 @@ class RadarHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        date = query.get("date", ["2026-04-29"])[0]
         if parsed.path == "/api/v1/backtest/run":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
@@ -78,6 +81,8 @@ class RadarHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 return self.send_error_json(400, "Invalid JSON body")
             return self.send_json(backtest_result(body))
+        if parsed.path == "/api/v1/reviews/save":
+            return self.send_json(save_daily_review(date))
         return self.send_error_json(404, "Not found")
 
     def send_static(self, path: str) -> None:

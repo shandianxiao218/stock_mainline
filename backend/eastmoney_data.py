@@ -5,6 +5,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+try:
+    from review_store import latest_saved_review
+except ImportError:
+    latest_saved_review = None
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_EASTMONEY_ROOT = Path("C:/eastmoney")
@@ -76,6 +81,7 @@ def eastmoney_status() -> dict[str, Any]:
             "progress_json": {"path": str(progress_json), "exists": progress_json.exists()},
         },
         "database": database_status(DEFAULT_DB_PATH),
+        "latest_saved_review": latest_saved_review() if latest_saved_review else None,
         "import_command": "tools\\eastmoney_import.exe C:\\eastmoney backend\\data\\eastmoney 20200101",
         "load_command": "python backend\\load_eastmoney_csv.py",
         "build_command": (
