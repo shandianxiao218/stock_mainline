@@ -41,6 +41,7 @@ MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和
 | --- | --- |
 | `tools/eastmoney_import.c` | 读取东方财富本地二进制日线文件并导出 CSV |
 | `backend/eastmoney_data.py` | 读取 C 导出的 CSV 元信息和数据源状态 |
+| `backend/load_eastmoney_csv.py` | 将 C 导出的东方财富 CSV 装载进本地 SQLite |
 | `backend/server.py` | 本地 HTTP 服务、API 路由、静态 UI |
 | `backend/scoring.py` | 热度、延续性、风险、置信度、自动聚合 |
 | `backend/sample_data.py` | Demo 市场、板块、自选股、持仓数据 |
@@ -73,6 +74,7 @@ Risk penalty is capped at 20. Confidence uses liquidity, top theme score spread,
 
 - `backend\data\eastmoney\stocks.csv`
 - `backend\data\eastmoney\daily_quotes.csv`
+- `backend\data\radar.db`
 
 Tushare 保留为备用或补充数据源，后续可用于交易日历、行业分类、指数数据等。
 
@@ -82,7 +84,15 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 
 ## 持久化
 
-当前 demo 仍使用本地样例板块数据完成主线评分演示，东方财富 C 导入器已经可以导出个股日线 CSV。后续应把 CSV 装载进 SQLite/PostgreSQL，再生成板块日度快照。`docs/database.sql` 是 PostgreSQL 草案，也可改造为个人本地 SQLite。
+当前 demo 仍使用本地样例板块数据完成主线评分演示。东方财富 C 导入器已经可以导出个股日线 CSV，且 `backend/load_eastmoney_csv.py` 已能将 CSV 装载进本地 SQLite 数据库 `backend/data/radar.db`。
+
+当前 SQLite 表：
+
+- `import_batch`：导入批次记录。
+- `em_stock`：东方财富股票列表。
+- `em_daily_quote`：东方财富个股日线。
+
+后续需要在此基础上增加板块成分、板块行情快照、涨停情绪指标、主线评分结果、风险信号和置信度结果。`docs/database.sql` 是长期 PostgreSQL 草案，个人本地版本优先使用 SQLite 快速迭代。
 
 ## 与 SRS 的差异决策记录
 
@@ -94,6 +104,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 | 2026-04-29 | 东方财富二进制 `.dat` 文件只能由 C 程序读取，Python 不解析二进制 | SRS 未限定导入器语言和二进制解析边界 | 用户明确要求“读取二进制文件不要用 py，就直接用 c 实现” | 数据导入边界、后端数据读取方式 |
 | 2026-04-29 | 当前 demo 使用静态 Web + Python 标准库 HTTP 服务，暂未引入完整后端框架 | SRS 只描述 API 能力，未限定框架；原建议可走 FastAPI | 降低本地启动依赖，先验证主线榜单、详情、风险、报告和 Excel 导出链路 | Demo 服务层、后续框架替换计划 |
 | 2026-04-29 | 当前主线评分仍使用样例板块指标，东方财富日线先导出为结构化 CSV | SRS 目标是基于真实行情、板块、涨停、舆情等数据评分 | 东方财富个股日线已接入，但板块成分、涨停、舆情和快照入库尚未完成 | 评分输入、回测真实性、模型验收 |
+| 2026-04-29 | 个人 demo 持久化优先使用本地 SQLite，长期设计保留 PostgreSQL 草案 | SRS 的数据库设计以核心表概要为主，未明确个人版落地数据库；当前实现先用 SQLite | 个人使用场景下 SQLite 部署简单、无需额外服务，适合快速跑通真实数据链路 | 持久化层、导入脚本、后续回测执行 |
 
 ## 运行
 

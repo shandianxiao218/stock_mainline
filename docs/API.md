@@ -60,7 +60,7 @@ GET /api/v1/portfolio/risk?date=2026-04-29
 GET /api/v1/data/eastmoney/status
 ```
 
-返回东方财富本地路径、C 导入器、源文件存在性、CSV 导出行数和推荐构建/导入命令。Python 后端只读取 C 导出的 CSV 元信息，不读取东方财富二进制文件。
+返回东方财富本地路径、C 导入器、源文件存在性、CSV 导出行数、SQLite 入库状态和推荐构建/导入/装载命令。Python 后端只读取 C 导出的 CSV 与 SQLite 数据库，不读取东方财富二进制文件。
 
 ## 回测
 
