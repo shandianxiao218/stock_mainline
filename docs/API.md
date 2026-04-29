@@ -30,6 +30,14 @@ GET /api/v1/themes/{theme_id}/risks?date=2026-04-29
 
 返回风险扣分明细和触发原因。
 
+## 风险历史
+
+```http
+GET /api/v1/themes/{theme_id}/risk-history?date=2026-04-29&days=20
+```
+
+返回单条主线近 N 日风险扣分、状态和主要风险项。
+
 ## 因子贡献
 
 ```http

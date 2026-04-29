@@ -124,6 +124,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 因子分析：`GET /api/v1/factors/effectiveness` 计算 5 日/20 日 IC、Rank IC、双窗口方向和动态权重建议。
 - 置信度历史：`GET /api/v1/confidence/history` 返回近 N 日置信度、五个拆解维度和第一主线。
 - 日志审计：`GET /api/v1/audit/logs` 返回 API 访问、参数修改、复盘保存、回测和本地自选/持仓变更记录。
+- 风险历史：`GET /api/v1/themes/{theme_id}/risk-history` 返回单主线近 N 日风险扣分、状态和主要风险项。
 - Excel 导出：包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。
 
 ## 与 SRS 的差异决策记录
