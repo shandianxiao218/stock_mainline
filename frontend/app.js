@@ -1,5 +1,6 @@
 const state = {
   ranking: null,
+  modelConfig: null,
   selectedThemeId: null,
   stockSort: { key: "amount", direction: "desc" },
 };
@@ -27,21 +28,24 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
     fetchJson(`/api/v1/portfolio/risk?date=${date}`),
     fetchJson("/api/v1/data/quality"),
+    fetchJson("/api/v1/model/config"),
   ]);
 
   state.ranking = ranking;
+  state.modelConfig = modelConfig;
   renderOverview(ranking);
   renderRanking(ranking.items);
   renderMatrix(matrix);
   renderReport(report);
   renderPortfolio(portfolio);
   renderQuality(quality);
+  renderModelConfig(modelConfig);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -110,6 +114,26 @@ function renderOverview(ranking) {
   $("riskCount").textContent = `${highRisk.length} 条`;
   $("riskSummary").textContent = highRisk.map((item) => item.theme_name).join("、") || "暂无高风险主线";
   $("rankingMeta").textContent = `${ranking.date} / ${ranking.period} / ${ranking.items.length} 条主线`;
+}
+
+function renderModelConfig(payload) {
+  const active = payload.active || {};
+  $("modelVersion").value = active.model_version || "v1.0-local";
+  $("configVersion").value = active.config_version || "default";
+  $("heatWeight").value = active.heat_weight ?? 0.4;
+  $("continuationWeight").value = active.continuation_weight ?? 0.6;
+  $("riskCap").value = active.risk_cap ?? 20;
+  $("modelConfigMeta").textContent = `${active.model_version || "-"} / ${active.config_version || "-"} / 风险上限 ${active.risk_cap ?? "-"}`;
+  $("modelConfigHistory").innerHTML = (payload.items || []).slice(0, 5).map((item) => {
+    const cfg = item.config || {};
+    return `
+      <div class="config-row ${item.is_active ? "active" : ""}">
+        <strong>${cfg.model_version || item.model_version} / ${cfg.config_version || item.config_version}</strong>
+        <span>热度 ${cfg.heat_weight}，延续 ${cfg.continuation_weight}，风险上限 ${cfg.risk_cap}</span>
+        <small>${item.created_at || ""}${item.is_active ? " / 当前生效" : ""}</small>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderRanking(items) {
@@ -262,6 +286,24 @@ async function saveReview() {
   loadDataSourceStatus();
 }
 
+async function saveModelConfig(event) {
+  event.preventDefault();
+  const payload = {
+    model_version: $("modelVersion").value.trim() || "v1.0-local",
+    config_version: $("configVersion").value.trim() || "default",
+    heat_weight: Number($("heatWeight").value || 0),
+    continuation_weight: Number($("continuationWeight").value || 0),
+    risk_cap: Number($("riskCap").value || 20),
+  };
+  const saved = await fetchJson("/api/v1/model/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  $("modelConfigMeta").textContent = `${saved.model_version} / ${saved.config_version} / 已保存`;
+  await loadDashboard();
+}
+
 async function addWatchlist(event) {
   event.preventDefault();
   const symbol = $("watchSymbol").value.trim();
@@ -393,6 +435,7 @@ $("backtestBtn").addEventListener("click", runBacktest);
 $("saveReviewBtn").addEventListener("click", saveReview);
 $("watchlistForm").addEventListener("submit", addWatchlist);
 $("positionForm").addEventListener("submit", addPosition);
+$("modelConfigForm").addEventListener("submit", saveModelConfig);
 $("closeKlineBtn").addEventListener("click", closeKline);
 document.querySelectorAll(".component-table th[data-sort]").forEach((th) => {
   th.addEventListener("click", () => {

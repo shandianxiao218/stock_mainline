@@ -178,6 +178,49 @@ button.secondary,
   gap: 12px;
 }
 
+.config-form {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr repeat(3, minmax(120px, 0.8fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.config-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.config-form span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.config-history {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.config-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.config-row.active {
+  border-color: #7aa7e8;
+  background: #eef5ff;
+}
+
+.config-row span,
+.config-row small {
+  color: var(--muted);
+}
+
 .quality-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -569,6 +612,8 @@ h4 {
 
   .metric-grid,
   .quality-grid,
+  .config-form,
+  .config-row,
   .detail-grid,
   .portfolio-grid,
   .split-list {

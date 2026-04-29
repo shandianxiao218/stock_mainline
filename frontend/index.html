@@ -23,6 +23,7 @@
           <a href="#detail">主线详情</a>
           <a href="#portfolio">持仓风险</a>
           <a href="#report">复盘报告</a>
+          <a href="#model">模型配置</a>
           <a href="#quality">数据质量</a>
         </nav>
         <div class="side-note">
@@ -217,6 +218,40 @@
           </div>
           <p id="reportText" class="report-text"></p>
           <pre id="backtestResult" class="backtest-result"></pre>
+        </section>
+
+        <section id="model" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Model</p>
+              <h3>模型参数与版本</h3>
+            </div>
+            <span id="modelConfigMeta"></span>
+          </div>
+          <form id="modelConfigForm" class="config-form">
+            <label>
+              <span>模型版本</span>
+              <input id="modelVersion" type="text" value="v1.0-local">
+            </label>
+            <label>
+              <span>参数版本</span>
+              <input id="configVersion" type="text" value="default">
+            </label>
+            <label>
+              <span>热度权重</span>
+              <input id="heatWeight" type="number" min="0" max="1" step="0.05" value="0.4">
+            </label>
+            <label>
+              <span>延续性权重</span>
+              <input id="continuationWeight" type="number" min="0" max="1" step="0.05" value="0.6">
+            </label>
+            <label>
+              <span>风险扣分上限</span>
+              <input id="riskCap" type="number" min="0" max="50" step="1" value="20">
+            </label>
+            <button type="submit">保存并刷新</button>
+          </form>
+          <div id="modelConfigHistory" class="config-history"></div>
         </section>
 
         <section id="quality" class="panel">

@@ -17,6 +17,7 @@ sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
 from data_quality import data_quality_payload
+from model_config_store import get_active_config, list_configs, save_config
 from review_store import save_daily_review
 from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
 from theme_universe import PORTFOLIO
@@ -86,6 +87,9 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/data/quality":
             return self.send_json(data_quality_payload())
 
+        if path == "/api/v1/model/config":
+            return self.send_json({"active": get_active_config(), "items": list_configs()})
+
         if path == "/api/v1/themes/matrix":
             days = int(query.get("days", ["20"])[0])
             return self.send_json(theme_matrix_payload(date, days))
@@ -142,6 +146,14 @@ class RadarHandler(BaseHTTPRequestHandler):
                         body.get("tag"),
                     )
                 )
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
+        if parsed.path == "/api/v1/model/config":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                return self.send_json(save_config(body))
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
         return self.send_error_json(404, "Not found")

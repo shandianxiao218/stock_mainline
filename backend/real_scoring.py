@@ -9,6 +9,7 @@ from statistics import mean, median
 from typing import Any
 
 from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
+from model_config_store import get_active_config
 
 try:
     from watchlist_store import list_positions, list_watchlist
@@ -288,8 +289,9 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
 
     heat = weighted_score(heat_factors, HEAT_WEIGHTS)
     continuation = weighted_score(continuation_factors, CONTINUATION_WEIGHTS)
-    risk = min(20.0, sum(risks.values()))
-    composite = round(0.4 * heat + 0.6 * continuation - risk, 2)
+    config = get_active_config()
+    risk = min(float(config["risk_cap"]), sum(risks.values()))
+    composite = round(config["heat_weight"] * heat + config["continuation_weight"] * continuation - risk, 2)
     raw = {
         **sector,
         "core_stocks": [name for _code, name in sector["stocks"]],
@@ -466,8 +468,9 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
 
         heat = round(avg("heat_score"), 2)
         continuation = round(avg("continuation_score"), 2)
-        risk = round(min(20.0, avg("risk_penalty")), 2)
-        theme_score = round(0.4 * heat + 0.6 * continuation - risk, 2)
+        config = get_active_config()
+        risk = round(min(float(config["risk_cap"]), avg("risk_penalty")), 2)
+        theme_score = round(config["heat_weight"] * heat + config["continuation_weight"] * continuation - risk, 2)
         branches = [item.raw["branch"] for item in cluster]
         core_stocks = []
         stock_metrics = []
@@ -557,7 +560,7 @@ def confidence(themes: list[dict[str, Any]], market: dict[str, Any]) -> dict[str
 def ranking_payload(date: str, period: str = "short") -> dict[str, Any]:
     themes, market = build_themes_for_date(date)
     conf = confidence(themes, market)
-    return {"date": market["date"], "requested_date": date, "period": period, "market": market, **conf, "items": themes}
+    return {"date": market["date"], "requested_date": date, "period": period, "market": market, "model_config": get_active_config(), **conf, "items": themes}
 
 
 def theme_matrix_payload(date: str, days: int = 20) -> dict[str, Any]:
