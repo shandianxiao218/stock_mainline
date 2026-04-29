@@ -120,6 +120,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 自选股/持仓：分别使用 `local_watchlist` 和 `local_position` 持久化。
 - 模型配置：`GET/POST /api/v1/model/config` 管理当前生效参数，主线评分公式即时读取。
 - 因子分析：`GET /api/v1/factors/effectiveness` 计算 5 日/20 日 IC、Rank IC、双窗口方向和动态权重建议。
+- 置信度历史：`GET /api/v1/confidence/history` 返回近 N 日置信度、五个拆解维度和第一主线。
 - Excel 导出：包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。
 
 ## 与 SRS 的差异决策记录

@@ -116,6 +116,14 @@ GET /api/v1/factors/effectiveness?date=2026-04-29&holding_period=3
 
 返回因子 5 日/20 日 IC、Rank IC、双窗口方向、基础权重、建议权重和调整动作。当前建议仅用于研究展示，不会自动改写评分权重。
 
+## 置信度历史
+
+```http
+GET /api/v1/confidence/history?date=2026-04-29&days=20
+```
+
+返回近 N 日模型置信度、置信度分、流动性、主线分差、风险稳定性、市场广度、主线一致性和当日第一主线。
+
 ## 东方财富数据源状态
 
 ```http
