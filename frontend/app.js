@@ -50,7 +50,8 @@ async function loadDataSourceStatus() {
     const status = await fetchJson("/api/v1/data/eastmoney/status");
     const stocks = status.generated_files.stocks_csv.rows;
     const quotes = status.generated_files.daily_quotes_csv.rows;
-    $("dataSourceLabel").textContent = `东方财富 / C导入 / ${stocks}只 / ${quotes}行`;
+    const dbQuotes = status.database.exists ? status.database.quote_count : 0;
+    $("dataSourceLabel").textContent = `东方财富 / C导入${stocks}只 / 入库${dbQuotes || quotes}行`;
   } catch (error) {
     $("dataSourceLabel").textContent = "东方财富 / 状态未知";
   }
