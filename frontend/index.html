@@ -188,7 +188,16 @@
               <div id="watchlist" class="stock-list"></div>
             </div>
             <div>
-              <h4>持仓</h4>
+              <div class="list-header">
+                <h4>持仓</h4>
+                <form id="positionForm" class="inline-form position-form">
+                  <input id="positionSymbol" type="text" placeholder="代码" maxlength="6">
+                  <input id="positionName" type="text" placeholder="名称">
+                  <input id="positionQty" type="number" placeholder="数量" min="1">
+                  <input id="positionCost" type="number" placeholder="成本" step="0.01">
+                  <button type="submit" class="secondary">保存</button>
+                </form>
+              </div>
               <div id="positions" class="stock-list"></div>
             </div>
           </div>

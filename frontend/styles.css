@@ -361,6 +361,10 @@ tbody tr.selected {
   gap: 8px;
 }
 
+.position-form {
+  grid-template-columns: 66px 1fr 80px 80px auto;
+}
+
 h4 {
   margin: 0 0 10px;
 }

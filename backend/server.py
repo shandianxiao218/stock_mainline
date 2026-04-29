@@ -17,7 +17,8 @@ sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
 from review_store import save_daily_review
-from watchlist_store import add_watchlist, delete_watchlist, list_watchlist
+from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
+from theme_universe import PORTFOLIO
 
 try:
     from real_scoring import (
@@ -93,6 +94,9 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/watchlist":
             return self.send_json({"items": list_watchlist()})
 
+        if path == "/api/v1/positions":
+            return self.send_json({"items": list_positions(PORTFOLIO)})
+
         if path == "/api/v1/export/themes.xlsx":
             return self.send_excel(date)
 
@@ -120,6 +124,22 @@ class RadarHandler(BaseHTTPRequestHandler):
                 return self.send_json(add_watchlist(str(body.get("symbol", "")), body.get("name"), body.get("tag")))
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
+        if parsed.path == "/api/v1/positions":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                return self.send_json(
+                    add_position(
+                        str(body.get("symbol", "")),
+                        body.get("name"),
+                        float(body.get("quantity", 0)),
+                        float(body["cost_price"]) if body.get("cost_price") not in (None, "") else None,
+                        body.get("tag"),
+                    )
+                )
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
         return self.send_error_json(404, "Not found")
 
     def do_DELETE(self) -> None:
@@ -127,6 +147,9 @@ class RadarHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/v1/watchlist/"):
             symbol = unquote(parsed.path.split("/")[4])
             return self.send_json(delete_watchlist(symbol))
+        if parsed.path.startswith("/api/v1/positions/"):
+            symbol = unquote(parsed.path.split("/")[4])
+            return self.send_json(delete_position(symbol))
         return self.send_error_json(404, "Not found")
 
     def send_static(self, path: str) -> None:

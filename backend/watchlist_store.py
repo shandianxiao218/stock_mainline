@@ -20,6 +20,15 @@ def init_watchlist_schema(conn: sqlite3.Connection) -> None:
           tag text,
           created_at text not null default current_timestamp
         );
+
+        create table if not exists local_position (
+          symbol text primary key,
+          name text not null,
+          quantity real not null,
+          cost_price real,
+          tag text,
+          created_at text not null default current_timestamp
+        );
         """
     )
 
@@ -71,3 +80,68 @@ def delete_watchlist(symbol: str) -> dict[str, Any]:
         conn.commit()
     return {"symbol": symbol, "deleted": True}
 
+
+def list_positions(default_positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    with sqlite3.connect(DB_PATH) as conn:
+        init_watchlist_schema(conn)
+        count = conn.execute("select count(*) from local_position").fetchone()[0]
+        if count == 0:
+            for item in default_positions:
+                conn.execute(
+                    """
+                    insert or ignore into local_position(symbol, name, quantity, cost_price, tag)
+                    values (?, ?, ?, ?, ?)
+                    """,
+                    (item["symbol"], item["name"], item.get("quantity", 0), item.get("cost_price"), "默认"),
+                )
+            conn.commit()
+        rows = conn.execute(
+            "select symbol, name, quantity, cost_price, tag, created_at from local_position order by created_at, symbol"
+        ).fetchall()
+    return [
+        {
+            "symbol": row[0],
+            "ts_code": row[0],
+            "name": row[1],
+            "quantity": row[2],
+            "cost_price": row[3],
+            "tag": row[4],
+            "created_at": row[5],
+        }
+        for row in rows
+    ]
+
+
+def add_position(symbol: str, name: str | None, quantity: float, cost_price: float | None = None, tag: str | None = None) -> dict[str, Any]:
+    symbol = symbol.strip().upper().split(".")[0]
+    if not symbol or len(symbol) != 6 or not symbol.isdigit():
+        raise ValueError("股票代码必须是6位数字")
+    if quantity <= 0:
+        raise ValueError("持仓数量必须大于0")
+    with sqlite3.connect(DB_PATH) as conn:
+        init_watchlist_schema(conn)
+        row = conn.execute("select name from em_stock where symbol = ?", (symbol,)).fetchone()
+        final_name = name or (row[0] if row and row[0] != symbol else symbol)
+        conn.execute(
+            """
+            insert into local_position(symbol, name, quantity, cost_price, tag)
+            values (?, ?, ?, ?, ?)
+            on conflict(symbol) do update set
+              name = excluded.name,
+              quantity = excluded.quantity,
+              cost_price = excluded.cost_price,
+              tag = excluded.tag
+            """,
+            (symbol, final_name, quantity, cost_price, tag),
+        )
+        conn.commit()
+    return {"symbol": symbol, "ts_code": symbol, "name": final_name, "quantity": quantity, "cost_price": cost_price, "tag": tag}
+
+
+def delete_position(symbol: str) -> dict[str, Any]:
+    symbol = symbol.strip().upper().split(".")[0]
+    with sqlite3.connect(DB_PATH) as conn:
+        init_watchlist_schema(conn)
+        conn.execute("delete from local_position where symbol = ?", (symbol,))
+        conn.commit()
+    return {"symbol": symbol, "deleted": True}

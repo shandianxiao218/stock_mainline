@@ -185,19 +185,20 @@ function renderStockMetrics(stocks) {
 function renderPortfolio(payload) {
   $("portfolioSummary").textContent = `持仓高风险 ${payload.summary.portfolio_high_risk_count} / 自选高风险 ${payload.summary.watchlist_high_risk_count}`;
   $("watchlist").innerHTML = payload.watchlist.map((stock) => renderStock(stock, true)).join("");
-  $("positions").innerHTML = payload.portfolio.map((stock) => renderStock(stock, false)).join("");
+  $("positions").innerHTML = payload.portfolio.map((stock) => renderStock(stock, false, true)).join("");
 }
 
-function renderStock(stock, canDelete) {
+function renderStock(stock, canDelete, canDeletePosition = false) {
   const level = stock.risk_level || "unknown";
   const deleteButton = canDelete ? `<button class="text-btn" data-delete-watch="${stock.symbol || (stock.ts_code || "").slice(0, 6)}">删除</button>` : "";
+  const deletePositionButton = canDeletePosition ? `<button class="text-btn" data-delete-position="${stock.symbol || (stock.ts_code || "").slice(0, 6)}">删除</button>` : "";
   return `
     <div class="stock-item">
       <strong>
         <span>${stock.name}</span>
-        <span>${deleteButton}<span class="risk-${level}">${riskName(level)}</span></span>
+        <span>${deleteButton}${deletePositionButton}<span class="risk-${level}">${riskName(level)}</span></span>
       </strong>
-      <p>${stock.theme_name || "未匹配主线"}${stock.quantity ? ` / ${stock.quantity}股` : ""}</p>
+      <p>${stock.theme_name || "未匹配主线"}${stock.quantity ? ` / ${stock.quantity}股` : ""}${stock.cost_price ? ` / 成本 ${stock.cost_price}` : ""}</p>
       <p>${stock.risk_note}</p>
     </div>
   `;
@@ -257,9 +258,34 @@ async function addWatchlist(event) {
   loadDashboard();
 }
 
+async function addPosition(event) {
+  event.preventDefault();
+  const symbol = $("positionSymbol").value.trim();
+  const name = $("positionName").value.trim();
+  const quantity = Number($("positionQty").value || 0);
+  const cost_price = $("positionCost").value;
+  if (!symbol || quantity <= 0) return;
+  await fetchJson("/api/v1/positions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol, name, quantity, cost_price }),
+  });
+  $("positionSymbol").value = "";
+  $("positionName").value = "";
+  $("positionQty").value = "";
+  $("positionCost").value = "";
+  loadDashboard();
+}
+
 async function deleteWatch(symbol) {
   if (!symbol) return;
   await fetchJson(`/api/v1/watchlist/${symbol}`, { method: "DELETE" });
+  loadDashboard();
+}
+
+async function deletePosition(symbol) {
+  if (!symbol) return;
+  await fetchJson(`/api/v1/positions/${symbol}`, { method: "DELETE" });
   loadDashboard();
 }
 
@@ -347,6 +373,7 @@ $("periodInput").addEventListener("change", loadDashboard);
 $("backtestBtn").addEventListener("click", runBacktest);
 $("saveReviewBtn").addEventListener("click", saveReview);
 $("watchlistForm").addEventListener("submit", addWatchlist);
+$("positionForm").addEventListener("submit", addPosition);
 $("closeKlineBtn").addEventListener("click", closeKline);
 document.querySelectorAll(".component-table th[data-sort]").forEach((th) => {
   th.addEventListener("click", () => {
@@ -361,6 +388,8 @@ document.querySelectorAll(".component-table th[data-sort]").forEach((th) => {
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-delete-watch]");
   if (button) deleteWatch(button.dataset.deleteWatch);
+  const positionButton = event.target.closest("[data-delete-position]");
+  if (positionButton) deletePosition(positionButton.dataset.deletePosition);
 });
 
 loadDashboard().catch((error) => {

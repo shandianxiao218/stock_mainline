@@ -11,8 +11,9 @@ from typing import Any
 from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
 
 try:
-    from watchlist_store import list_watchlist
+    from watchlist_store import list_positions, list_watchlist
 except ImportError:
+    list_positions = None
     list_watchlist = None
 
 
@@ -672,7 +673,8 @@ def portfolio_risk(date: str) -> dict[str, Any]:
 
     source_watchlist = list_watchlist() if list_watchlist else WATCHLIST
     enriched_watchlist = [enrich(row) for row in source_watchlist]
-    enriched_portfolio = [enrich(row) for row in PORTFOLIO]
+    source_positions = list_positions(PORTFOLIO) if list_positions else PORTFOLIO
+    enriched_portfolio = [enrich(row) for row in source_positions]
     return {
         "date": date,
         "watchlist": enriched_watchlist,
