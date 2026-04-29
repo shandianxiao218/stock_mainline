@@ -42,6 +42,9 @@ MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和
 | `tools/eastmoney_import.c` | 读取东方财富本地二进制日线文件并导出 CSV |
 | `backend/eastmoney_data.py` | 读取 C 导出的 CSV 元信息和数据源状态 |
 | `backend/load_eastmoney_csv.py` | 将 C 导出的东方财富 CSV 装载进本地 SQLite |
+| `backend/theme_universe.py` | 当前可维护的主题/成分配置 |
+| `backend/real_scoring.py` | 基于 SQLite 日线计算主线评分、风险、置信度和回测 |
+| `backend/review_store.py` | 保存单日复盘评分、风险、置信度和报告 |
 | `backend/server.py` | 本地 HTTP 服务、API 路由、静态 UI |
 | `backend/scoring.py` | 热度、延续性、风险、置信度、自动聚合 |
 | `backend/sample_data.py` | Demo 市场、板块、自选股、持仓数据 |
@@ -91,8 +94,20 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - `import_batch`：导入批次记录。
 - `em_stock`：东方财富股票列表。
 - `em_daily_quote`：东方财富个股日线。
+- `local_theme_score_daily`：本地保存的主线评分结果。
+- `local_risk_signal_daily`：本地保存的风险信号。
+- `local_confidence_daily`：本地保存的置信度结果。
+- `local_daily_report`：本地保存的自然语言复盘报告。
 
 后续需要在此基础上增加板块成分、板块行情快照、涨停情绪指标、主线评分结果、风险信号和置信度结果。`docs/database.sql` 是长期 PostgreSQL 草案，个人本地版本优先使用 SQLite 快速迭代。
+
+## 当前可用版本
+
+- 主线榜单：基于 `em_daily_quote` 实时计算，支持请求日期自动回退到最近可用交易日。
+- 主线详情：展示评分拆解、风险信号、强分支、核心股和成分股表现。
+- 持仓/自选风险：按 `backend/theme_universe.py` 中的成分代码匹配当前主线风险。
+- 回测：按 SQLite 可用交易日逐日重放，排名只使用当日及以前数据，收益验证使用后续持有期数据。
+- 复盘落库：`POST /api/v1/reviews/save?date=YYYY-MM-DD` 保存当日评分和报告。
 
 ## 与 SRS 的差异决策记录
 
@@ -105,6 +120,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 | 2026-04-29 | 当前 demo 使用静态 Web + Python 标准库 HTTP 服务，暂未引入完整后端框架 | SRS 只描述 API 能力，未限定框架；原建议可走 FastAPI | 降低本地启动依赖，先验证主线榜单、详情、风险、报告和 Excel 导出链路 | Demo 服务层、后续框架替换计划 |
 | 2026-04-29 | 当前主线评分仍使用样例板块指标，东方财富日线先导出为结构化 CSV | SRS 目标是基于真实行情、板块、涨停、舆情等数据评分 | 东方财富个股日线已接入，但板块成分、涨停、舆情和快照入库尚未完成 | 评分输入、回测真实性、模型验收 |
 | 2026-04-29 | 个人 demo 持久化优先使用本地 SQLite，长期设计保留 PostgreSQL 草案 | SRS 的数据库设计以核心表概要为主，未明确个人版落地数据库；当前实现先用 SQLite | 个人使用场景下 SQLite 部署简单、无需额外服务，适合快速跑通真实数据链路 | 持久化层、导入脚本、后续回测执行 |
+| 2026-04-29 | 当前主题/成分先使用 `backend/theme_universe.py` 可维护配置 | SRS 希望底层板块计算、上层主线自动聚合，并最终支持自动聚类；当前尚未解析东方财富真实板块成分 | 东方财富个股日线已可用，但板块成分二进制/本地文件解析尚未完成；先用配置跑通真实评分闭环 | 主线成分来源、评分覆盖范围、自动聚合质量 |
 
 ## 运行
 

@@ -47,6 +47,10 @@ http://127.0.0.1:8000
 - `docs/database.sql`: 数据库 DDL 草案。
 - `docs/API.md`: API 草案。
 - `tools/eastmoney_import.c`: 东方财富本地二进制日线 C 导入器。
+- `backend/load_eastmoney_csv.py`: 将 C 导出的 CSV 装载进 SQLite。
+- `backend/real_scoring.py`: 基于 SQLite 日线计算主线榜单、详情和回测。
+- `backend/review_store.py`: 保存日度复盘结果。
+- `backend/theme_universe.py`: 当前主题和成分配置。
 - `backend/server.py`: 本地 API/静态页面服务。
 - `backend/scoring.py`: 评分与聚合逻辑。
 - `frontend/index.html`: Web 看板。
