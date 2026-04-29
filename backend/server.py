@@ -28,6 +28,7 @@ try:
         daily_report,
         db_ready,
         detail_payload,
+        factor_effectiveness_payload,
         find_theme,
         kline_payload,
         portfolio_risk,
@@ -44,6 +45,9 @@ except ImportError:
 
     def kline_payload(symbol: str, date: str, window: int = 80) -> dict[str, object]:
         return {"symbol": symbol, "bars": []}
+
+    def factor_effectiveness_payload(date: str, holding_period: int = 3) -> dict[str, object]:
+        return {"date": date, "holding_period": holding_period, "status": "unavailable", "items": []}
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -89,6 +93,10 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/model/config":
             return self.send_json({"active": get_active_config(), "items": list_configs()})
+
+        if path == "/api/v1/factors/effectiveness":
+            holding_period = int(query.get("holding_period", ["3"])[0])
+            return self.send_json(factor_effectiveness_payload(date, holding_period))
 
         if path == "/api/v1/themes/matrix":
             days = int(query.get("days", ["20"])[0])

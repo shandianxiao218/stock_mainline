@@ -852,3 +852,142 @@ def pearson(xs: list[float], ys: list[float]) -> float:
     if den_x == 0 or den_y == 0:
         return 0.0
     return num / (den_x * den_y)
+
+
+def rank_values(values: list[float]) -> list[float]:
+    ordered = sorted((value, idx) for idx, value in enumerate(values))
+    ranks = [0.0] * len(values)
+    pos = 0
+    while pos < len(ordered):
+        end = pos + 1
+        while end < len(ordered) and ordered[end][0] == ordered[pos][0]:
+            end += 1
+        rank = (pos + 1 + end) / 2
+        for _value, idx in ordered[pos:end]:
+            ranks[idx] = rank
+        pos = end
+    return ranks
+
+
+def spearman(xs: list[float], ys: list[float]) -> float:
+    if len(xs) != len(ys) or len(xs) < 2:
+        return 0.0
+    return pearson(rank_values(xs), rank_values(ys))
+
+
+def factor_effectiveness_payload(date: str, holding_period: int = 3) -> dict[str, Any]:
+    holding_period = max(1, min(10, int(holding_period)))
+    with sqlite3.connect(DB_PATH) as conn:
+        target_date = resolve_trade_date(conn, date)
+        dates = [
+            row[0]
+            for row in conn.execute(
+                """
+                select distinct trade_date
+                from em_daily_quote
+                where trade_date <= ?
+                order by trade_date
+                """,
+                (target_date,),
+            ).fetchall()
+        ]
+        target_idx = dates.index(target_date)
+        entry_dates = [
+            trade_date
+            for idx, trade_date in enumerate(dates)
+            if idx + holding_period <= target_idx
+        ][-20:]
+        if not entry_dates:
+            return {
+                "date": date_text(target_date),
+                "holding_period": holding_period,
+                "status": "insufficient_data",
+                "items": [],
+                "summary": "本地数据不足，暂不能计算因子有效性。",
+            }
+
+        factor_points: dict[str, list[dict[str, float]]] = defaultdict(list)
+        date_to_index = {trade_date: idx for idx, trade_date in enumerate(dates)}
+        for entry_date in entry_dates:
+            exit_date = dates[date_to_index[entry_date] + holding_period]
+            themes, _market = build_themes_for_date(date_text(entry_date))
+            for theme in themes:
+                symbols = sorted({stock["symbol"] for stock in theme.get("stock_metrics", [])})
+                future_return = future_theme_return(conn, symbols, entry_date, exit_date)
+                if future_return is None:
+                    continue
+                factor_points["主线分"].append({"score": float(theme["theme_score"]), "return": future_return})
+                factor_points["热度分"].append({"score": float(theme["heat_score"]), "return": future_return})
+                factor_points["延续性分"].append({"score": float(theme["continuation_score"]), "return": future_return})
+                for row in theme.get("factor_contribution", {}).get("heat", []):
+                    factor_points[row["name"]].append({"score": float(row["score"]), "return": future_return})
+                for row in theme.get("factor_contribution", {}).get("continuation", []):
+                    factor_points[row["name"]].append({"score": float(row["score"]), "return": future_return})
+
+    def window_stats(points: list[dict[str, float]], window: int) -> dict[str, Any]:
+        sliced = points[-window * max(1, len(THEME_SECTORS)):]
+        scores = [point["score"] for point in sliced]
+        returns = [point["return"] for point in sliced]
+        return {
+            "ic": round(pearson(scores, returns), 4) if len(scores) >= 3 else None,
+            "rank_ic": round(spearman(scores, returns), 4) if len(scores) >= 3 else None,
+            "sample_count": len(scores),
+        }
+
+    def state(ic: float | None, sample_count: int) -> str:
+        if ic is None or sample_count < 12 or abs(ic) < 0.03:
+            return "不显著"
+        return "上升" if ic > 0 else "下降"
+
+    def action(short_state: str, long_state: str) -> str:
+        if short_state == "上升" and long_state == "上升":
+            return "小幅上调"
+        if short_state == "下降" and long_state == "下降":
+            return "小幅下调"
+        return "不调整"
+
+    all_base_weights = {"主线分": None, "热度分": None, "延续性分": None, **HEAT_WEIGHTS, **CONTINUATION_WEIGHTS}
+    rows = []
+    for name in ["主线分", "热度分", "延续性分", *HEAT_WEIGHTS.keys(), *CONTINUATION_WEIGHTS.keys()]:
+        points = factor_points.get(name, [])
+        stats_5 = window_stats(points, 5)
+        stats_20 = window_stats(points, 20)
+        state_5 = state(stats_5["ic"], stats_5["sample_count"])
+        state_20 = state(stats_20["ic"], stats_20["sample_count"])
+        adjust = action(state_5, state_20)
+        base_weight = all_base_weights.get(name)
+        dynamic_weight = None
+        final_weight = None
+        if isinstance(base_weight, (int, float)):
+            multiplier = 1.08 if adjust == "小幅上调" else 0.92 if adjust == "小幅下调" else 1.0
+            dynamic_weight = round(max(base_weight * 0.75, min(base_weight * 1.25, base_weight * multiplier)), 2)
+            final_weight = round(0.85 * base_weight + 0.15 * dynamic_weight, 2)
+        rows.append({
+            "factor": name,
+            "base_weight": base_weight,
+            "dynamic_weight": dynamic_weight,
+            "final_weight": final_weight,
+            "ic_5d": stats_5["ic"],
+            "rank_ic_5d": stats_5["rank_ic"],
+            "sample_count_5d": stats_5["sample_count"],
+            "state_5d": state_5,
+            "ic_20d": stats_20["ic"],
+            "rank_ic_20d": stats_20["rank_ic"],
+            "sample_count_20d": stats_20["sample_count"],
+            "state_20d": state_20,
+            "action": adjust,
+        })
+
+    rows.sort(key=lambda row: (row["action"] == "不调整", -(abs(row["ic_20d"] or 0))))
+    summary = (
+        f"基于本地 SQLite 截至{date_text(target_date)}的可用交易日，按未来{holding_period}日主线成分平均收益计算因子 IC；"
+        "当前为研究评估输出，动态权重建议尚不自动改写基础因子权重。"
+    )
+    return {
+        "date": date_text(target_date),
+        "holding_period": holding_period,
+        "status": "completed",
+        "entry_dates": [date_text(item) for item in entry_dates],
+        "summary": summary,
+        "items": rows,
+    }

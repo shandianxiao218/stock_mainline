@@ -221,6 +221,26 @@ button.secondary,
   color: var(--muted);
 }
 
+.factor-action {
+  display: inline-block;
+  min-width: 68px;
+  text-align: center;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #edf2f7;
+  color: var(--muted);
+}
+
+.factor-action.up-action {
+  background: #fde8e4;
+  color: var(--red);
+}
+
+.factor-action.down-action {
+  background: #e4f3ec;
+  color: var(--green);
+}
+
 .quality-card {
   border: 1px solid var(--line);
   border-radius: 8px;

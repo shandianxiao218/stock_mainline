@@ -28,13 +28,14 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
     fetchJson(`/api/v1/portfolio/risk?date=${date}`),
     fetchJson("/api/v1/data/quality"),
     fetchJson("/api/v1/model/config"),
+    fetchJson(`/api/v1/factors/effectiveness?date=${date}&holding_period=3`),
   ]);
 
   state.ranking = ranking;
@@ -46,6 +47,7 @@ async function loadDashboard() {
   renderPortfolio(portfolio);
   renderQuality(quality);
   renderModelConfig(modelConfig);
+  renderFactors(factors);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -134,6 +136,27 @@ function renderModelConfig(payload) {
       </div>
     `;
   }).join("");
+}
+
+function renderFactors(payload) {
+  $("factorMeta").textContent = payload.status === "completed"
+    ? `${payload.date} / ${payload.holding_period}日收益验证`
+    : "数据不足";
+  $("factorSummary").textContent = payload.summary || "暂无因子有效性数据";
+  $("factorBody").innerHTML = (payload.items || []).map((item) => `
+    <tr>
+      <td><strong>${item.factor}</strong></td>
+      <td>${formatIc(item.ic_5d)}</td>
+      <td>${formatIc(item.rank_ic_5d)}</td>
+      <td>${item.state_5d}</td>
+      <td>${formatIc(item.ic_20d)}</td>
+      <td>${formatIc(item.rank_ic_20d)}</td>
+      <td>${item.state_20d}</td>
+      <td>${item.base_weight ?? "-"}</td>
+      <td>${item.final_weight ?? "-"}</td>
+      <td><span class="factor-action ${item.action === "小幅上调" ? "up-action" : item.action === "小幅下调" ? "down-action" : ""}">${item.action}</span></td>
+    </tr>
+  `).join("");
 }
 
 function renderRanking(items) {
@@ -426,6 +449,10 @@ function formatAmount(value) {
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("zh-CN");
+}
+
+function formatIc(value) {
+  return value === null || value === undefined ? "-" : Number(value).toFixed(4);
 }
 
 $("refreshBtn").addEventListener("click", loadDashboard);

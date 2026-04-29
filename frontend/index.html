@@ -23,6 +23,7 @@
           <a href="#detail">主线详情</a>
           <a href="#portfolio">持仓风险</a>
           <a href="#report">复盘报告</a>
+          <a href="#factors">因子分析</a>
           <a href="#model">模型配置</a>
           <a href="#quality">数据质量</a>
         </nav>
@@ -252,6 +253,36 @@
             <button type="submit">保存并刷新</button>
           </form>
           <div id="modelConfigHistory" class="config-history"></div>
+        </section>
+
+        <section id="factors" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Factors</p>
+              <h3>因子有效性</h3>
+            </div>
+            <span id="factorMeta"></span>
+          </div>
+          <p id="factorSummary" class="explain"></p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>因子</th>
+                  <th>5日IC</th>
+                  <th>5日Rank IC</th>
+                  <th>5日方向</th>
+                  <th>20日IC</th>
+                  <th>20日Rank IC</th>
+                  <th>20日方向</th>
+                  <th>基础权重</th>
+                  <th>建议权重</th>
+                  <th>动作</th>
+                </tr>
+              </thead>
+              <tbody id="factorBody"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="quality" class="panel">
