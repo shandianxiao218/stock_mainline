@@ -22,6 +22,15 @@ GET /api/v1/themes/{theme_id}/detail?date=2026-04-29
 
 返回主线评分拆解、强分支、核心股、风险项、因子贡献和次日验证点。
 
+## 东方财富真实板块
+
+```http
+GET /api/v1/sectors?limit=100&q=融资
+GET /api/v1/sectors/{sector_code}/constituents?limit=500
+```
+
+返回东方财富真实板块列表、成分数量和指定板块成分股。
+
 ## 风险明细
 
 ```http

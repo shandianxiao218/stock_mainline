@@ -45,6 +45,7 @@
 - 新闻催化事件库已落地 SQLite，支持按日期录入/查看主线催化、S/A/B/C 等级、来源和备注；评分模型暂未自动引用人工催化。
 - `backend/test_scoring.py` 提供本地 unittest 烟测，覆盖榜单分数、风险上限、置信度组件、主线矩阵和因子有效性。
 - 东方财富 C 导入器已解析 `swc8\data\hs_bk_crc_data_new.dat`，生成 `sector_constituents.csv`；SQLite 已有 `em_sector` 和 `em_sector_constituent_history`，当前验证为 1012 个板块、85640 条成分关系。
+- Web 已支持东方财富真实板块浏览，接口为 `/api/v1/sectors` 和 `/api/v1/sectors/{sector_code}/constituents`。
 
 ## 当前数据边界
 

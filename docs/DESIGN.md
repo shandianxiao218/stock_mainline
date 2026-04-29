@@ -49,6 +49,7 @@ MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和
 | `backend/audit_store.py` | 保存本地审计日志 |
 | `backend/catalyst_store.py` | 保存人工新闻催化和等级修正 |
 | `backend/permissions.py` | 定义本地角色和权限 |
+| `backend/sector_store.py` | 查询东方财富真实板块和成分股 |
 | `backend/server.py` | 本地 HTTP 服务、API 路由、静态 UI |
 | `backend/scoring.py` | 热度、延续性、风险、置信度、自动聚合 |
 | `backend/sample_data.py` | Demo 市场、板块、自选股、持仓数据 |
@@ -135,6 +136,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 回测页面：支持模型版本、起止日期、持有期、Top N 参数配置和样本 CSV 下载。
 - 权限角色：`GET /api/v1/auth/roles` 返回访客、普通用户、研究员、管理员、审计员权限；个人版默认本地管理员。
 - 催化事件：`GET/POST /api/v1/catalysts` 管理人工催化事件和 S/A/B/C 等级。
+- 真实板块：`GET /api/v1/sectors` 和 `GET /api/v1/sectors/{sector_code}/constituents` 查看东方财富板块与成分。
 - Excel 导出：包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。
 
 ## 与 SRS 的差异决策记录
