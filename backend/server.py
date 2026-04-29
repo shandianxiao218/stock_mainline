@@ -16,6 +16,7 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
+from audit_store import list_audit_logs, write_audit
 from data_quality import data_quality_payload
 from model_config_store import get_active_config, list_configs, save_config
 from review_store import save_daily_review
@@ -62,6 +63,7 @@ class RadarHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
         date = query.get("date", ["2026-04-29"])[0]
+        self.audit_access("GET", path, query)
 
         if path == "/api/v1/themes/ranking":
             return self.send_json(ranking_payload(date, query.get("period", ["short"])[0]))
@@ -110,6 +112,10 @@ class RadarHandler(BaseHTTPRequestHandler):
             days = int(query.get("days", ["20"])[0])
             return self.send_json(confidence_history_payload(date, days))
 
+        if path == "/api/v1/audit/logs":
+            limit = int(query.get("limit", ["100"])[0])
+            return self.send_json({"items": list_audit_logs(limit)})
+
         if path.startswith("/api/v1/stocks/") and path.endswith("/kline"):
             symbol = unquote(path.split("/")[4])
             window = int(query.get("window", ["80"])[0])
@@ -130,6 +136,7 @@ class RadarHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         date = query.get("date", ["2026-04-29"])[0]
+        self.audit_access("POST", parsed.path, query)
         if parsed.path == "/api/v1/backtest/run":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
@@ -137,15 +144,21 @@ class RadarHandler(BaseHTTPRequestHandler):
                 body = json.loads(raw)
             except json.JSONDecodeError:
                 return self.send_error_json(400, "Invalid JSON body")
-            return self.send_json(backtest_result(body))
+            result = backtest_result(body)
+            write_audit("backtest_run", method="POST", path=parsed.path, target=result.get("task_id"), detail=result.get("metrics", {}))
+            return self.send_json(result)
         if parsed.path == "/api/v1/reviews/save":
-            return self.send_json(save_daily_review(date))
+            result = save_daily_review(date)
+            write_audit("review_save", method="POST", path=parsed.path, target=date, detail=result)
+            return self.send_json(result)
         if parsed.path == "/api/v1/watchlist":
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
                 body = json.loads(raw)
-                return self.send_json(add_watchlist(str(body.get("symbol", "")), body.get("name"), body.get("tag")))
+                result = add_watchlist(str(body.get("symbol", "")), body.get("name"), body.get("tag"))
+                write_audit("watchlist_add", method="POST", path=parsed.path, target=result.get("symbol"), detail=result)
+                return self.send_json(result)
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
         if parsed.path == "/api/v1/positions":
@@ -153,15 +166,15 @@ class RadarHandler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
                 body = json.loads(raw)
-                return self.send_json(
-                    add_position(
-                        str(body.get("symbol", "")),
-                        body.get("name"),
-                        float(body.get("quantity", 0)),
-                        float(body["cost_price"]) if body.get("cost_price") not in (None, "") else None,
-                        body.get("tag"),
-                    )
+                result = add_position(
+                    str(body.get("symbol", "")),
+                    body.get("name"),
+                    float(body.get("quantity", 0)),
+                    float(body["cost_price"]) if body.get("cost_price") not in (None, "") else None,
+                    body.get("tag"),
                 )
+                write_audit("position_save", method="POST", path=parsed.path, target=result.get("symbol"), detail=result)
+                return self.send_json(result)
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
         if parsed.path == "/api/v1/model/config":
@@ -169,20 +182,31 @@ class RadarHandler(BaseHTTPRequestHandler):
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
                 body = json.loads(raw)
-                return self.send_json(save_config(body))
+                result = save_config(body)
+                write_audit("model_config_save", method="POST", path=parsed.path, target=result.get("config_version"), detail=result)
+                return self.send_json(result)
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
         return self.send_error_json(404, "Not found")
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
+        self.audit_access("DELETE", parsed.path, {})
         if parsed.path.startswith("/api/v1/watchlist/"):
             symbol = unquote(parsed.path.split("/")[4])
-            return self.send_json(delete_watchlist(symbol))
+            result = delete_watchlist(symbol)
+            write_audit("watchlist_delete", method="DELETE", path=parsed.path, target=symbol, detail=result)
+            return self.send_json(result)
         if parsed.path.startswith("/api/v1/positions/"):
             symbol = unquote(parsed.path.split("/")[4])
-            return self.send_json(delete_position(symbol))
+            result = delete_position(symbol)
+            write_audit("position_delete", method="DELETE", path=parsed.path, target=symbol, detail=result)
+            return self.send_json(result)
         return self.send_error_json(404, "Not found")
+
+    def audit_access(self, method: str, path: str, query: dict[str, list[str]]) -> None:
+        if path.startswith("/api/v1/") and path != "/api/v1/audit/logs":
+            write_audit("api_access", method=method, path=path, detail={"query": query})
 
     def send_static(self, path: str) -> None:
         if path == "/":

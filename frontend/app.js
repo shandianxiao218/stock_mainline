@@ -28,7 +28,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -37,6 +37,7 @@ async function loadDashboard() {
     fetchJson("/api/v1/model/config"),
     fetchJson(`/api/v1/factors/effectiveness?date=${date}&holding_period=3`),
     fetchJson(`/api/v1/confidence/history?date=${date}&days=20`),
+    fetchJson("/api/v1/audit/logs?limit=80"),
   ]);
 
   state.ranking = ranking;
@@ -50,6 +51,7 @@ async function loadDashboard() {
   renderModelConfig(modelConfig);
   renderFactors(factors);
   renderConfidenceHistory(ranking, confidenceHistory);
+  renderAudit(audit);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -72,6 +74,21 @@ function renderQuality(quality) {
       <strong>${check.name}</strong>
       <p>${check.detail}</p>
     </div>
+  `).join("");
+}
+
+function renderAudit(payload) {
+  const items = payload.items || [];
+  $("auditMeta").textContent = `最近 ${items.length} 条`;
+  $("auditBody").innerHTML = items.slice(0, 60).map((item) => `
+    <tr>
+      <td>${item.event_time}</td>
+      <td>${auditName(item.event_type)}</td>
+      <td>${item.method || "-"}</td>
+      <td>${item.path || "-"}</td>
+      <td>${item.target || "-"}</td>
+      <td>${item.actor || "-"}</td>
+    </tr>
   `).join("");
 }
 
@@ -316,6 +333,19 @@ function levelName(level) {
 
 function riskName(level) {
   return ({ high: "高风险", medium: "中风险", low: "低风险", unknown: "未知" })[level] || level;
+}
+
+function auditName(type) {
+  return ({
+    api_access: "API访问",
+    model_config_save: "参数修改",
+    review_save: "复盘保存",
+    backtest_run: "回测运行",
+    watchlist_add: "自选新增",
+    watchlist_delete: "自选删除",
+    position_save: "持仓保存",
+    position_delete: "持仓删除",
+  })[type] || type;
 }
 
 async function runBacktest() {

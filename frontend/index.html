@@ -25,6 +25,7 @@
           <a href="#report">复盘报告</a>
           <a href="#factors">因子分析</a>
           <a href="#model">模型配置</a>
+          <a href="#audit">日志审计</a>
           <a href="#quality">数据质量</a>
         </nav>
         <div class="side-note">
@@ -323,6 +324,31 @@
             <span id="qualityMeta"></span>
           </div>
           <div id="qualityChecks" class="quality-grid"></div>
+        </section>
+
+        <section id="audit" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Audit</p>
+              <h3>日志审计</h3>
+            </div>
+            <span id="auditMeta"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>类型</th>
+                  <th>方法</th>
+                  <th>路径</th>
+                  <th>对象</th>
+                  <th>用户</th>
+                </tr>
+              </thead>
+              <tbody id="auditBody"></tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>
