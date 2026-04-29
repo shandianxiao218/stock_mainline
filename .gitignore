@@ -10,3 +10,5 @@ dist/
 *.progress.json
 backend/data/eastmoney/*.csv
 backend/data/eastmoney/*.json
+backend/data/*.db
+backend/data/*.db-*
