@@ -35,6 +35,7 @@ try:
         kline_payload,
         portfolio_risk,
         ranking_payload,
+        risk_history_payload,
         theme_matrix_payload,
     )
     if not db_ready():
@@ -53,6 +54,9 @@ except ImportError:
 
     def confidence_history_payload(date: str, days: int = 20) -> dict[str, object]:
         return {"date": date, "days": 0, "items": []}
+
+    def risk_history_payload(theme_id: str, date: str, days: int = 20) -> dict[str, object]:
+        return {"date": date, "theme_id": theme_id, "days": 0, "items": []}
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -77,6 +81,11 @@ class RadarHandler(BaseHTTPRequestHandler):
             theme_id = unquote(path.split("/")[4])
             theme = find_theme(theme_id, date)
             return self.send_json({"date": date, "theme_id": theme_id, "items": theme["risks"]}) if theme else self.send_error_json(404, "Theme not found")
+
+        if path.startswith("/api/v1/themes/") and path.endswith("/risk-history"):
+            theme_id = unquote(path.split("/")[4])
+            days = int(query.get("days", ["20"])[0])
+            return self.send_json(risk_history_payload(theme_id, date, days))
 
         if path.startswith("/api/v1/themes/") and path.endswith("/factor-contribution"):
             theme_id = unquote(path.split("/")[4])

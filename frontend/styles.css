@@ -484,6 +484,10 @@ h4 {
   margin: 0 0 10px;
 }
 
+.subsection-title {
+  margin-top: 18px;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;

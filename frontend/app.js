@@ -233,8 +233,12 @@ function renderRanking(items) {
 
 async function selectTheme(themeId) {
   state.selectedThemeId = themeId;
-  const detail = await fetchJson(`/api/v1/themes/${themeId}/detail?date=${dateValue()}`);
+  const [detail, riskHistory] = await Promise.all([
+    fetchJson(`/api/v1/themes/${themeId}/detail?date=${dateValue()}`),
+    fetchJson(`/api/v1/themes/${themeId}/risk-history?date=${dateValue()}&days=20`),
+  ]);
   renderDetail(detail);
+  renderRiskHistory(riskHistory);
   renderRanking(state.ranking.items);
 }
 
@@ -268,6 +272,20 @@ function renderDetail(detail) {
       <p>${risk.reason}</p>
     </div>
   `).join("") || "<p>暂无明显风险信号</p>";
+}
+
+function renderRiskHistory(payload) {
+  $("riskHistoryBody").innerHTML = (payload.items || []).map((item) => {
+    const mainRisk = (item.risks || []).slice(0, 2).map((risk) => risk.risk_type).join("、") || "无明显风险";
+    return `
+      <tr>
+        <td>${item.date}</td>
+        <td class="risk">-${item.risk_penalty}</td>
+        <td>${item.status}</td>
+        <td>${mainRisk}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderStockMetrics(stocks) {

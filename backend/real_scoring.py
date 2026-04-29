@@ -641,6 +641,46 @@ def confidence_history_payload(date: str, days: int = 20) -> dict[str, Any]:
     }
 
 
+def risk_history_payload(theme_id: str, date: str, days: int = 20) -> dict[str, Any]:
+    days = max(1, min(days, 60))
+    with sqlite3.connect(DB_PATH) as conn:
+        trade_date = resolve_trade_date(conn, date)
+        rows = conn.execute(
+            """
+            select distinct trade_date
+            from em_daily_quote
+            where trade_date <= ?
+            order by trade_date desc
+            limit ?
+            """,
+            (trade_date, days),
+        ).fetchall()
+    dates = [date_text(row[0]) for row in reversed(rows)]
+    items = []
+    theme_name = None
+    for day in dates:
+        theme = find_theme(theme_id, day)
+        if not theme:
+            continue
+        theme_name = theme_name or theme["theme_name"]
+        items.append({
+            "date": day,
+            "theme_id": theme_id,
+            "theme_name": theme["theme_name"],
+            "theme_score": theme["theme_score"],
+            "risk_penalty": theme["risk_penalty"],
+            "status": theme["status"],
+            "risks": theme["risks"],
+        })
+    return {
+        "date": dates[-1] if dates else date,
+        "theme_id": theme_id,
+        "theme_name": theme_name,
+        "days": len(items),
+        "items": items,
+    }
+
+
 def kline_payload(symbol: str, date: str, window: int = 80) -> dict[str, Any]:
     window = max(10, min(window, 240))
     with sqlite3.connect(DB_PATH) as conn:
