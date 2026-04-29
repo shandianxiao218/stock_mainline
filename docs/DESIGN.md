@@ -1,53 +1,55 @@
-# MVP Technical Design
+# MVP 技术设计
 
-## Scope
+## 范围
 
-The first demo is a personal-use daily review system for A-share theme radar analysis. It focuses on after-close ranking, explanation, risk warnings, portfolio/watchlist risk, natural-language review, and Excel export.
+第一版 demo 是个人使用的 A 股主线雷达日度复盘系统，重点覆盖收盘后排名、解释、风险提醒、自选股/持仓风险、自然语言复盘和 Excel 导出。
 
-Out of scope for MVP: intraday refresh, trading orders, public investment advice, PDF export, and fully automated news interpretation.
+MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和全自动新闻解读。
 
-## Architecture
+## 架构
 
 ```text
-Tushare adapter / sample data
+东方财富C导入器 / 样例数据
         |
         v
-Daily snapshot normalizer
+日度快照标准化
         |
         v
-Sector scoring engine
-  - heat score
-  - continuation score
-  - risk penalty
+底层板块评分引擎
+  - 热度分
+  - 延续性分
+  - 风险扣分
         |
         v
-Automatic theme aggregation
-  - core stock overlap
-  - keyword similarity
-  - branch/category grouping
+自动主线聚合
+  - 核心股重叠
+  - 关键词相似
+  - 分支/类别归并
         |
         v
-Theme scoring and confidence
+主线评分与置信度
         |
-        +--> Web dashboard
-        +--> API responses
-        +--> Excel export
-        +--> Daily review text
+        +--> Web看板
+        +--> API响应
+        +--> Excel导出
+        +--> 日度复盘文本
 ```
 
-## Module Plan
+## 模块规划
 
-| Module | Responsibility |
+| 模块 | 职责 |
 | --- | --- |
-| `backend/server.py` | Local HTTP server, API routing, static UI serving |
-| `backend/scoring.py` | Heat, continuation, risk, confidence, aggregation |
-| `backend/sample_data.py` | Demo market/sector/watchlist/portfolio data |
-| `backend/tushare_adapter.py` | Future live data entry point |
-| `frontend/index.html` | Dashboard shell |
-| `frontend/styles.css` | Web UI styling |
-| `frontend/app.js` | API calls and UI rendering |
+| `tools/eastmoney_import.c` | 读取东方财富本地二进制日线文件并导出 CSV |
+| `backend/eastmoney_data.py` | 读取 C 导出的 CSV 元信息和数据源状态 |
+| `backend/server.py` | 本地 HTTP 服务、API 路由、静态 UI |
+| `backend/scoring.py` | 热度、延续性、风险、置信度、自动聚合 |
+| `backend/sample_data.py` | Demo 市场、板块、自选股、持仓数据 |
+| `backend/tushare_adapter.py` | Tushare 后续备用入口 |
+| `frontend/index.html` | Web 看板结构 |
+| `frontend/styles.css` | Web 样式 |
+| `frontend/app.js` | API 调用与页面渲染 |
 
-## MVP Scoring
+## MVP 评分
 
 Theme score:
 
@@ -57,33 +59,39 @@ theme_score = 0.4 * heat_score + 0.6 * continuation_score - risk_penalty
 
 Risk penalty is capped at 20. Confidence uses liquidity, top theme score spread, risk stability, market breadth, and theme consistency.
 
-## Data Source Strategy
+## 数据源策略
 
-Tushare is the Phase 1 data source. The first runnable demo does not call Tushare by default because it requires a user token and real quota. The adapter should later map Tushare data to normalized daily snapshots:
+第一阶段优先使用东方财富本地客户端数据，默认路径为 `C:\eastmoney`。二进制文件读取由 C 程序 `tools/eastmoney_import.c` 负责，Python 后端只读取 C 导出的 CSV 或后续 SQLite 结果。
 
-- Trading calendar.
-- Daily stock quotes.
-- Daily index quotes.
-- Limit-up and limit-break approximations or a licensed source if Tushare coverage is insufficient.
-- Sector/industry classification and constituent history.
+当前 C 导入器读取：
 
-## Sentiment Strategy
+- `C:\eastmoney\swc8\data\SHANGHAI\DayData_SH_V43.dat`
+- `C:\eastmoney\swc8\data\SHENZHEN\DayData_SZ_V43.dat`
+- `StkQuoteList_V10_1.dat`、`StkQuoteList_V10_0.dat` 股票名称文件，兼容 `StkQuoteList` 与 `StkQuoteListNsl` 目录
 
-No sentiment vendor is available. MVP keeps `sentiment_momentum`, `sentiment_heat`, and `sentiment_overheat` as optional fields. If missing, the model should either use neutral values or reduce sentiment weight through model configuration.
+输出：
 
-## Persistence
+- `backend\data\eastmoney\stocks.csv`
+- `backend\data\eastmoney\daily_quotes.csv`
 
-The demo computes from local sample records. Production MVP should use PostgreSQL or SQLite with historical snapshot tables. The DDL in `docs/database.sql` is PostgreSQL-oriented and can be adapted to SQLite for local personal use.
+Tushare 保留为备用或补充数据源，后续可用于交易日历、行业分类、指数数据等。
 
-## Run
+## 舆情策略
+
+当前没有舆情供应商。MVP 将 `sentiment_momentum`、`sentiment_heat`、`sentiment_overheat` 作为可选字段。如果缺失，模型使用中性值或通过配置降低舆情权重。
+
+## 持久化
+
+当前 demo 仍使用本地样例板块数据完成主线评分演示，东方财富 C 导入器已经可以导出个股日线 CSV。后续应把 CSV 装载进 SQLite/PostgreSQL，再生成板块日度快照。`docs/database.sql` 是 PostgreSQL 草案，也可改造为个人本地 SQLite。
+
+## 运行
 
 ```powershell
 python backend/server.py
 ```
 
-Then open:
+然后打开：
 
 ```text
 http://127.0.0.1:8000
 ```
-

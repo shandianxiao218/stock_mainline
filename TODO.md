@@ -1,22 +1,24 @@
-# TODO
+# 待办事项
 
-## Now
+## 已完成
 
-- [x] Record product decisions in project memory.
-- [x] Draft MVP technical design.
-- [x] Draft database DDL.
-- [x] Draft API contract.
-- [x] Build runnable local Web/API demo.
-- [x] Add Excel export path.
+- [x] 记录项目决策到项目记忆。
+- [x] 起草 MVP 技术设计。
+- [x] 起草数据库 DDL。
+- [x] 起草 API 草案。
+- [x] 搭建可运行的本地 Web/API demo。
+- [x] 增加 Excel 导出路径。
+- [x] 增加东方财富本地二进制日线 C 导入器。
 
-## Next
+## 下一步
 
-- [ ] Add Tushare token configuration UI or `.env` loading.
-- [ ] Implement Tushare daily collectors for stock quotes, index quotes, limit-up data alternatives, sector constituents, and trading calendar.
-- [ ] Persist daily snapshots into SQLite/PostgreSQL instead of in-memory sample records.
-- [ ] Replace simulated sentiment with a concrete low-cost source or disable sentiment weighting by configuration.
-- [ ] Implement real 5-year backtest replay with no future data leakage.
-- [ ] Add user-editable watchlist and portfolio storage.
-- [ ] Add model parameter versioning UI.
-- [ ] Add tests for scoring, risk penalties, confidence, and aggregation.
-
+- [ ] 将东方财富 `daily_quotes.csv` 装载进 SQLite/PostgreSQL。
+- [ ] 用东方财富日线生成板块日度行情快照。
+- [ ] 补充东方财富板块/行业/概念成分解析。
+- [ ] 如有需要，再添加 Tushare token 配置作为补充数据源。
+- [ ] 持久化日度快照，替代内存样例记录。
+- [ ] 用明确的低成本舆情源替换模拟舆情，或通过配置关闭舆情权重。
+- [ ] 实现无未来函数的真实 5 年回测重放。
+- [ ] 增加可编辑的自选股和持仓存储。
+- [ ] 增加模型参数版本管理 UI。
+- [ ] 增加评分、风险扣分、置信度和自动聚合测试。

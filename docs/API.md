@@ -1,60 +1,68 @@
-# API Draft
+# API 草案
 
-Base URL:
+基础地址：
 
 ```text
 http://127.0.0.1:8000
 ```
 
-## Theme Ranking
+## 主线榜单
 
 ```http
 GET /api/v1/themes/ranking?date=2026-04-29&period=short
 ```
 
-Returns daily theme ranking, confidence, market summary, and ranked items.
+返回日度主线榜单、模型置信度、市场摘要和排序项。
 
-## Theme Detail
+## 主线详情
 
 ```http
 GET /api/v1/themes/{theme_id}/detail?date=2026-04-29
 ```
 
-Returns theme score breakdown, branches, core stocks, risks, factor contribution, and next-day validation points.
+返回主线评分拆解、强分支、核心股、风险项、因子贡献和次日验证点。
 
-## Theme Risks
+## 风险明细
 
 ```http
 GET /api/v1/themes/{theme_id}/risks?date=2026-04-29
 ```
 
-Returns risk penalty details and triggered signals.
+返回风险扣分明细和触发原因。
 
-## Factor Contribution
+## 因子贡献
 
 ```http
 GET /api/v1/themes/{theme_id}/factor-contribution?date=2026-04-29
 ```
 
-Returns heat, continuation, and risk components.
+返回热度、延续性和风险因子拆解。
 
-## Daily Report
+## 日度复盘报告
 
 ```http
 GET /api/v1/reports/daily?date=2026-04-29
 ```
 
-Returns a natural-language daily review report.
+返回自然语言日度复盘报告。
 
-## Watchlist And Portfolio Risk
+## 自选股与持仓风险
 
 ```http
 GET /api/v1/portfolio/risk?date=2026-04-29
 ```
 
-Returns watchlist exposure, portfolio exposure, and high-risk theme overlap.
+返回自选股暴露、持仓暴露和高风险主线重合情况。
 
-## Backtest
+## 东方财富数据源状态
+
+```http
+GET /api/v1/data/eastmoney/status
+```
+
+返回东方财富本地路径、C 导入器、源文件存在性、CSV 导出行数和推荐构建/导入命令。Python 后端只读取 C 导出的 CSV 元信息，不读取东方财富二进制文件。
+
+## 回测
 
 ```http
 POST /api/v1/backtest/run
@@ -69,13 +77,12 @@ Content-Type: application/json
 }
 ```
 
-Returns a demo-shaped 5-year backtest summary. Real historical replay is a follow-up task.
+返回 5 年回测接口样例结果。真实历史逐日重放依赖东方财富历史快照入库后启用。
 
-## Excel Export
+## Excel 导出
 
 ```http
 GET /api/v1/export/themes.xlsx?date=2026-04-29
 ```
 
-Downloads the theme ranking and risk details as an Excel file.
-
+下载主线榜单和风险明细 Excel 文件。

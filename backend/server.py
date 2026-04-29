@@ -16,6 +16,7 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 sys.path.insert(0, str(CURRENT_DIR))
 
 from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload
+from eastmoney_data import eastmoney_status
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -52,6 +53,9 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/portfolio/risk":
             return self.send_json(portfolio_risk(date))
+
+        if path == "/api/v1/data/eastmoney/status":
+            return self.send_json(eastmoney_status())
 
         if path == "/api/v1/export/themes.xlsx":
             return self.send_excel(date)
@@ -149,4 +153,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

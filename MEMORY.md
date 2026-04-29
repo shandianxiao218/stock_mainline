@@ -1,29 +1,30 @@
-# A股板块主线雷达 Project Memory
+# A股板块主线雷达 项目记忆
 
-## Product Decisions
+## 产品决策
 
-- Phase 1 data source: Tushare.
-- First release scope: daily close review only; no intraday or real-time monitoring.
-- Initial theme system: automatic aggregation first, manual override can be added later.
-- Sentiment vendor: none for now. MVP uses placeholders and keeps the model interface.
-- Target user: personal use.
-- Client: Web.
-- Backtest horizon: 5 years.
-- Watchlist and portfolio risk: required.
-- Natural-language review report: required.
-- Export: Excel required; PDF is out of current scope.
+- 第一阶段数据源：优先使用东方财富本地客户端数据，默认路径为 `C:\eastmoney`。
+- Tushare 保留为后续备用或补充数据源。
+- 第一版范围：只做收盘复盘，不做盘中实时监控。
+- 初始主线体系：优先自动聚合，后续再增加人工覆盖。
+- 舆情供应商：暂无；MVP 使用占位字段并保留模型接口。
+- 目标用户：个人使用。
+- 客户端：Web。
+- 回测周期：5 年。
+- 自选股和持仓风险：需要。
+- 自然语言复盘报告：需要。
+- 导出：需要 Excel；PDF 暂不纳入当前范围。
 
-## MVP Implementation Bias
+## MVP 实现取向
 
-- Prefer a local runnable demo over a dependency-heavy stack.
-- Use static Web UI plus a Python HTTP API for the first demo.
-- Keep Tushare behind an adapter so API token and quota issues do not block demo startup.
-- Use sample data to demonstrate scoring, risk explanation, automatic theme aggregation, reporting, watchlist/portfolio risk, and Excel export.
+- 优先保证本地可运行 demo，不引入过重依赖。
+- 第一版使用静态 Web UI 加 Python HTTP API。
+- Tushare 放在适配层后面，避免 token 和额度问题阻塞 demo。
+- 用样例主线数据展示评分、风险解释、自动聚合、复盘报告、自选股/持仓风险和 Excel 导出。
+- 东方财富二进制 `.dat` 文件只允许通过 C 代码读取，不用 Python 解析。
 
-## Current Demo Boundaries
+## 当前 demo 边界
 
-- Scoring uses deterministic sample sector metrics, not live Tushare data yet.
-- Automatic aggregation uses branch/category hints, core stock overlap, and keyword similarity.
-- Sentiment scores are simulated fields in sample data until a provider or scraping source is selected.
-- Backtest endpoint returns a shaped MVP result for UI/API wiring; real 5-year replay is a Phase 3 task.
-
+- 评分仍使用确定性的样例板块指标；东方财富个股日线导出已通过 `tools/eastmoney_import.c` 跑通。
+- 自动聚合使用分支/类别提示、核心股重叠和关键词相似度。
+- 舆情分数在样例数据中模拟，后续确定供应商或采集源后替换。
+- 回测接口当前返回联调用样例结果；真实 5 年逐日重放依赖东方财富日度快照入库。

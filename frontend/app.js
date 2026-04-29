@@ -37,10 +37,22 @@ async function loadDashboard() {
   renderRanking(ranking.items);
   renderReport(report);
   renderPortfolio(portfolio);
+  loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
   if (firstTheme) {
     await selectTheme(state.selectedThemeId || firstTheme.theme_id);
+  }
+}
+
+async function loadDataSourceStatus() {
+  try {
+    const status = await fetchJson("/api/v1/data/eastmoney/status");
+    const stocks = status.generated_files.stocks_csv.rows;
+    const quotes = status.generated_files.daily_quotes_csv.rows;
+    $("dataSourceLabel").textContent = `东方财富 / C导入 / ${stocks}只 / ${quotes}行`;
+  } catch (error) {
+    $("dataSourceLabel").textContent = "东方财富 / 状态未知";
   }
 }
 
@@ -168,4 +180,3 @@ $("backtestBtn").addEventListener("click", runBacktest);
 loadDashboard().catch((error) => {
   $("reportText").textContent = `加载失败：${error.message}`;
 });
-
