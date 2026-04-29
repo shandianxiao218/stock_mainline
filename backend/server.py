@@ -97,8 +97,8 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/positions":
             return self.send_json({"items": list_positions(PORTFOLIO)})
 
-        if path == "/api/v1/export/themes.xlsx":
-            return self.send_excel(date)
+        if path in ("/api/v1/export/themes.xlsx", "/api/v1/export/full.xlsx"):
+            return self.send_excel_full(date)
 
         return self.send_static(path)
 
@@ -179,6 +179,9 @@ class RadarHandler(BaseHTTPRequestHandler):
         self.send_json({"error": message, "status": status}, status)
 
     def send_excel(self, date: str) -> None:
+        self.send_excel_full(date)
+
+    def send_excel_full(self, date: str) -> None:
         ranking = ranking_payload(date)
         rows = []
         risk_rows = []
@@ -208,6 +211,39 @@ class RadarHandler(BaseHTTPRequestHandler):
             pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="主线榜单")
             pd.DataFrame(risk_rows).to_excel(writer, index=False, sheet_name="风险明细")
             pd.DataFrame([ranking["components"]]).to_excel(writer, index=False, sheet_name="置信度")
+            report = daily_report(date)
+            pd.DataFrame([{"日期": report["date"], "复盘": report["report"]}]).to_excel(writer, index=False, sheet_name="复盘报告")
+            matrix = theme_matrix_payload(date, 20)
+            matrix_rows = []
+            for item in matrix["items"]:
+                row = {"主线": item["theme_name"]}
+                for day in matrix["dates"]:
+                    cell = item["cells"].get(day)
+                    row[day] = cell["theme_score"] if cell else None
+                matrix_rows.append(row)
+            pd.DataFrame(matrix_rows).to_excel(writer, index=False, sheet_name="20日矩阵")
+            component_rows = []
+            for item in ranking["items"]:
+                detail = detail_payload(item["theme_id"], date)
+                if not detail:
+                    continue
+                for stock in detail.get("stock_metrics", []):
+                    component_rows.append({
+                        "主线": item["theme_name"],
+                        "名称": stock["name"],
+                        "代码": stock["symbol"],
+                        "开": stock.get("open"),
+                        "收": stock.get("close"),
+                        "高": stock.get("high"),
+                        "低": stock.get("low"),
+                        "涨幅": stock.get("pct1"),
+                        "近5日涨幅": stock.get("pct5"),
+                        "成交量": stock.get("volume"),
+                        "成交额": stock.get("amount"),
+                        "是否炸板": "是" if stock.get("limit_break") else "否",
+                        "游资参与": stock.get("hot_money", "未接入"),
+                    })
+            pd.DataFrame(component_rows).to_excel(writer, index=False, sheet_name="成分股明细")
         content = output.getvalue()
 
         self.send_response(200)
