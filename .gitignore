@@ -6,4 +6,7 @@ server.err.log
 .venv/
 node_modules/
 dist/
-
+*.exe
+*.progress.json
+backend/data/eastmoney/*.csv
+backend/data/eastmoney/*.json
