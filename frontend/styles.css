@@ -133,6 +133,13 @@ main {
   flex-wrap: wrap;
 }
 
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 input,
 select {
   border: 1px solid var(--line);

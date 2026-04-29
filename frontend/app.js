@@ -182,8 +182,19 @@ async function runBacktest() {
   target.textContent = JSON.stringify(result, null, 2);
 }
 
+async function saveReview() {
+  const result = await fetchJson(`/api/v1/reviews/save?date=${dateValue()}`, {
+    method: "POST",
+  });
+  const target = $("backtestResult");
+  target.style.display = "block";
+  target.textContent = `复盘已保存：${result.trade_date}，主线 ${result.theme_count} 条，风险 ${result.risk_count} 条，置信度 ${levelName(result.confidence)} ${result.confidence_score}`;
+  loadDataSourceStatus();
+}
+
 $("refreshBtn").addEventListener("click", loadDashboard);
 $("backtestBtn").addEventListener("click", runBacktest);
+$("saveReviewBtn").addEventListener("click", saveReview);
 
 loadDashboard().catch((error) => {
   $("reportText").textContent = `加载失败：${error.message}`;
