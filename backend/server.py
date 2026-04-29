@@ -19,6 +19,7 @@ from eastmoney_data import eastmoney_status
 from audit_store import list_audit_logs, write_audit
 from data_quality import data_quality_payload
 from model_config_store import get_active_config, list_configs, save_config
+from permissions import has_permission, roles_payload
 from review_store import save_daily_review
 from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
 from theme_universe import PORTFOLIO
@@ -109,6 +110,9 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/model/config":
             return self.send_json({"active": get_active_config(), "items": list_configs()})
 
+        if path == "/api/v1/auth/roles":
+            return self.send_json(roles_payload(self.current_role()))
+
         if path == "/api/v1/factors/effectiveness":
             holding_period = int(query.get("holding_period", ["3"])[0])
             return self.send_json(factor_effectiveness_payload(date, holding_period))
@@ -122,6 +126,8 @@ class RadarHandler(BaseHTTPRequestHandler):
             return self.send_json(confidence_history_payload(date, days))
 
         if path == "/api/v1/audit/logs":
+            if not self.require_permission("view_audit"):
+                return
             limit = int(query.get("limit", ["100"])[0])
             return self.send_json({"items": list_audit_logs(limit)})
 
@@ -147,6 +153,8 @@ class RadarHandler(BaseHTTPRequestHandler):
         date = query.get("date", ["2026-04-29"])[0]
         self.audit_access("POST", parsed.path, query)
         if parsed.path == "/api/v1/backtest/run":
+            if not self.require_permission("run_backtest"):
+                return
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
@@ -157,10 +165,14 @@ class RadarHandler(BaseHTTPRequestHandler):
             write_audit("backtest_run", method="POST", path=parsed.path, target=result.get("task_id"), detail=result.get("metrics", {}))
             return self.send_json(result)
         if parsed.path == "/api/v1/reviews/save":
+            if not self.require_permission("save_review"):
+                return
             result = save_daily_review(date)
             write_audit("review_save", method="POST", path=parsed.path, target=date, detail=result)
             return self.send_json(result)
         if parsed.path == "/api/v1/watchlist":
+            if not self.require_permission("manage_own_watchlist"):
+                return
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
@@ -171,6 +183,8 @@ class RadarHandler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
         if parsed.path == "/api/v1/positions":
+            if not self.require_permission("manage_own_watchlist"):
+                return
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
@@ -187,6 +201,8 @@ class RadarHandler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
         if parsed.path == "/api/v1/model/config":
+            if not self.require_permission("manage_model"):
+                return
             length = int(self.headers.get("Content-Length", "0"))
             raw = self.rfile.read(length).decode("utf-8") if length else "{}"
             try:
@@ -202,11 +218,15 @@ class RadarHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         self.audit_access("DELETE", parsed.path, {})
         if parsed.path.startswith("/api/v1/watchlist/"):
+            if not self.require_permission("manage_own_watchlist"):
+                return
             symbol = unquote(parsed.path.split("/")[4])
             result = delete_watchlist(symbol)
             write_audit("watchlist_delete", method="DELETE", path=parsed.path, target=symbol, detail=result)
             return self.send_json(result)
         if parsed.path.startswith("/api/v1/positions/"):
+            if not self.require_permission("manage_own_watchlist"):
+                return
             symbol = unquote(parsed.path.split("/")[4])
             result = delete_position(symbol)
             write_audit("position_delete", method="DELETE", path=parsed.path, target=symbol, detail=result)
@@ -215,7 +235,18 @@ class RadarHandler(BaseHTTPRequestHandler):
 
     def audit_access(self, method: str, path: str, query: dict[str, list[str]]) -> None:
         if path.startswith("/api/v1/") and path != "/api/v1/audit/logs":
-            write_audit("api_access", method=method, path=path, detail={"query": query})
+            write_audit("api_access", method=method, path=path, detail={"query": query, "role": self.current_role()})
+
+    def current_role(self) -> str:
+        return self.headers.get("X-User-Role") or "admin"
+
+    def require_permission(self, permission: str) -> bool:
+        role = self.current_role()
+        if has_permission(role, permission):
+            return True
+        self.send_error_json(403, f"当前角色无权限：{permission}")
+        write_audit("permission_denied", method=self.command, path=urlparse(self.path).path, target=permission, detail={"role": role})
+        return False
 
     def send_static(self, path: str) -> None:
         if path == "/":

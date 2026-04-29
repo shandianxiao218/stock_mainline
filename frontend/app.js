@@ -29,7 +29,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -39,6 +39,7 @@ async function loadDashboard() {
     fetchJson(`/api/v1/factors/effectiveness?date=${date}&holding_period=3`),
     fetchJson(`/api/v1/confidence/history?date=${date}&days=20`),
     fetchJson("/api/v1/audit/logs?limit=80"),
+    fetchJson("/api/v1/auth/roles"),
   ]);
 
   state.ranking = ranking;
@@ -54,6 +55,7 @@ async function loadDashboard() {
   renderFactors(factors);
   renderConfidenceHistory(ranking, confidenceHistory);
   renderAudit(audit);
+  renderRoles(roles);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -91,6 +93,17 @@ function renderAudit(payload) {
       <td>${item.target || "-"}</td>
       <td>${item.actor || "-"}</td>
     </tr>
+  `).join("");
+}
+
+function renderRoles(payload) {
+  $("roleMeta").textContent = `当前：${payload.current_role_name || payload.current_role}`;
+  $("roleGrid").innerHTML = (payload.roles || []).map((role) => `
+    <div class="role-card ${role.role === payload.current_role ? "active" : ""}">
+      <strong>${role.name}</strong>
+      <span>${role.role}</span>
+      <p>${role.permissions.join("、")}</p>
+    </div>
   `).join("");
 }
 
