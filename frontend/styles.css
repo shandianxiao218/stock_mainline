@@ -257,6 +257,40 @@ button.secondary,
   align-items: end;
 }
 
+.catalyst-form {
+  display: grid;
+  grid-template-columns: 1fr 90px 1.8fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.catalyst-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.catalyst-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.catalyst-item strong {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.catalyst-item p,
+.empty-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .config-history {
   display: grid;
   gap: 8px;
@@ -702,6 +736,7 @@ h4 {
   .confidence-components,
   .config-form,
   .backtest-form,
+  .catalyst-form,
   .config-row,
   .detail-grid,
   .portfolio-grid,

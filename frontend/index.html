@@ -23,6 +23,7 @@
           <a href="#detail">主线详情</a>
           <a href="#portfolio">持仓风险</a>
           <a href="#report">复盘报告</a>
+          <a href="#catalysts">催化事件</a>
           <a href="#factors">因子分析</a>
           <a href="#model">模型配置</a>
           <a href="#roles">权限角色</a>
@@ -287,6 +288,30 @@
           </form>
           <p id="reportText" class="report-text"></p>
           <pre id="backtestResult" class="backtest-result"></pre>
+        </section>
+
+        <section id="catalysts" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Catalyst</p>
+              <h3>新闻催化与人工等级</h3>
+            </div>
+            <span id="catalystMeta"></span>
+          </div>
+          <form id="catalystForm" class="catalyst-form">
+            <input id="catalystTheme" type="text" placeholder="主线名称">
+            <select id="catalystLevel">
+              <option value="S">S级</option>
+              <option value="A">A级</option>
+              <option value="B">B级</option>
+              <option value="C">C级</option>
+            </select>
+            <input id="catalystTitle" type="text" placeholder="催化标题">
+            <input id="catalystSource" type="text" placeholder="来源">
+            <input id="catalystNote" type="text" placeholder="备注">
+            <button type="submit" class="secondary">保存催化</button>
+          </form>
+          <div id="catalystList" class="catalyst-list"></div>
         </section>
 
         <section id="model" class="panel">

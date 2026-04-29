@@ -17,6 +17,7 @@ sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
 from audit_store import list_audit_logs, write_audit
+from catalyst_store import add_catalyst, list_catalysts
 from data_quality import data_quality_payload
 from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
@@ -106,6 +107,10 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/data/quality":
             return self.send_json(data_quality_payload())
+
+        if path == "/api/v1/catalysts":
+            limit = int(query.get("limit", ["100"])[0])
+            return self.send_json({"items": list_catalysts(date, limit)})
 
         if path == "/api/v1/model/config":
             return self.send_json({"active": get_active_config(), "items": list_configs()})
@@ -209,6 +214,18 @@ class RadarHandler(BaseHTTPRequestHandler):
                 body = json.loads(raw)
                 result = save_config(body)
                 write_audit("model_config_save", method="POST", path=parsed.path, target=result.get("config_version"), detail=result)
+                return self.send_json(result)
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
+        if parsed.path == "/api/v1/catalysts":
+            if not self.require_permission("manage_model"):
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                result = add_catalyst(body)
+                write_audit("catalyst_add", method="POST", path=parsed.path, target=str(result.get("id")), detail=result)
                 return self.send_json(result)
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))

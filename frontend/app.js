@@ -29,7 +29,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -40,6 +40,7 @@ async function loadDashboard() {
     fetchJson(`/api/v1/confidence/history?date=${date}&days=20`),
     fetchJson("/api/v1/audit/logs?limit=80"),
     fetchJson("/api/v1/auth/roles"),
+    fetchJson(`/api/v1/catalysts?date=${date}&limit=50`),
   ]);
 
   state.ranking = ranking;
@@ -56,6 +57,7 @@ async function loadDashboard() {
   renderConfidenceHistory(ranking, confidenceHistory);
   renderAudit(audit);
   renderRoles(roles);
+  renderCatalysts(catalysts);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -366,6 +368,42 @@ function renderReport(report) {
   $("reportText").textContent = report.report;
 }
 
+function renderCatalysts(payload) {
+  const items = payload.items || [];
+  $("catalystMeta").textContent = `${items.length} 条`;
+  $("catalystList").innerHTML = items.map((item) => `
+    <div class="catalyst-item">
+      <strong>
+        <span>${item.title}</span>
+        <span>${item.level}级 / ${item.score}</span>
+      </strong>
+      <p>${item.theme_name || "未绑定主线"} / ${item.source || "未填来源"} / ${item.note || "无备注"}</p>
+    </div>
+  `).join("") || "<p class=\"empty-note\">暂无人工催化事件</p>";
+}
+
+async function addCatalyst(event) {
+  event.preventDefault();
+  const title = $("catalystTitle").value.trim();
+  if (!title) return;
+  await fetchJson("/api/v1/catalysts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      trade_date: dateValue(),
+      theme_name: $("catalystTheme").value.trim(),
+      level: $("catalystLevel").value,
+      title,
+      source: $("catalystSource").value.trim(),
+      note: $("catalystNote").value.trim(),
+    }),
+  });
+  $("catalystTitle").value = "";
+  $("catalystSource").value = "";
+  $("catalystNote").value = "";
+  await loadDashboard();
+}
+
 function levelName(level) {
   return ({ high: "高", medium: "中", low: "低" })[level] || level;
 }
@@ -384,6 +422,7 @@ function auditName(type) {
     watchlist_delete: "自选删除",
     position_save: "持仓保存",
     position_delete: "持仓删除",
+    catalyst_add: "催化新增",
   })[type] || type;
 }
 
@@ -595,6 +634,7 @@ $("saveReviewBtn").addEventListener("click", saveReview);
 $("watchlistForm").addEventListener("submit", addWatchlist);
 $("positionForm").addEventListener("submit", addPosition);
 $("modelConfigForm").addEventListener("submit", saveModelConfig);
+$("catalystForm").addEventListener("submit", addCatalyst);
 $("closeKlineBtn").addEventListener("click", closeKline);
 document.querySelectorAll(".component-table th[data-sort]").forEach((th) => {
   th.addEventListener("click", () => {
