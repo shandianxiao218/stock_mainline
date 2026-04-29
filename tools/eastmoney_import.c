@@ -17,6 +17,7 @@
  * 输出：
  *   stocks.csv       symbol,name,market,last_date,last_close,last_volume,total_bars
  *   daily_quotes.csv symbol,date,open,high,low,close,volume,amount
+ *   sector_constituents.csv sector_code,sector_name,source,symbol,market,as_of_date
  */
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -333,6 +334,86 @@ static void csv_text(FILE *f, const char *text) {
     fputc('"', f);
 }
 
+static void gbk_to_utf8(const char *input, char *output, int output_size) {
+    if (!input || !*input || output_size <= 0) {
+        if (output_size > 0) output[0] = '\0';
+        return;
+    }
+    wchar_t wide[512];
+    int wide_len = MultiByteToWideChar(936, 0, input, -1, wide, (int)(sizeof(wide) / sizeof(wide[0])));
+    if (wide_len <= 0) {
+        strncpy(output, input, (size_t)output_size - 1);
+        output[output_size - 1] = '\0';
+        return;
+    }
+    int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wide, -1, output, output_size, NULL, NULL);
+    if (utf8_len <= 0) output[0] = '\0';
+}
+
+static int member_to_symbol(const char *token, char *symbol, char *market) {
+    if (!token || strlen(token) < 8) return 0;
+    if (!(token[0] == '0' || token[0] == '1')) return 0;
+    if (token[1] != '.') return 0;
+    for (int i = 0; i < 6; i++) {
+        if (!isdigit((unsigned char)token[i + 2])) return 0;
+        symbol[i] = token[i + 2];
+    }
+    symbol[6] = '\0';
+    strcpy(market, token[0] == '1' ? "SH" : "SZ");
+    return is_a_share_code(symbol, market);
+}
+
+static int export_sector_constituents(const char *sector_file, const char *output_path) {
+    FILE *in = fopen(sector_file, "rb");
+    if (!in) return 0;
+    FILE *out = fopen(output_path, "wb");
+    if (!out) {
+        fclose(in);
+        return 0;
+    }
+    fprintf(out, "sector_code,sector_name,source,symbol,market,as_of_date\n");
+    static char line[2 * 1024 * 1024];
+    int written = 0;
+    while (fgets(line, sizeof(line), in)) {
+        char *fields[7] = {0};
+        char *cursor = line;
+        int field_count = 0;
+        while (field_count < 6) {
+            fields[field_count++] = cursor;
+            char *sep = strchr(cursor, ';');
+            if (!sep) break;
+            *sep = '\0';
+            cursor = sep + 1;
+        }
+        if (field_count < 6 || !fields[1] || strncmp(fields[1], "90.BK", 5) != 0) continue;
+        fields[6] = cursor;
+        char *members = fields[6];
+        if (!members || !*members) continue;
+        char *newline = strpbrk(members, "\r\n");
+        if (newline) *newline = '\0';
+
+        char sector_name_utf8[512];
+        gbk_to_utf8(fields[5], sector_name_utf8, sizeof(sector_name_utf8));
+
+        char *token = strtok(members, ",:");
+        while (token) {
+            char symbol[8];
+            char market[4];
+            if (member_to_symbol(token, symbol, market)) {
+                csv_text(out, fields[1]);
+                fputc(',', out);
+                csv_text(out, sector_name_utf8);
+                fprintf(out, ",eastmoney_hs_bk,%s,%s,\n", symbol, market);
+                written++;
+            }
+            token = strtok(NULL, ",:");
+        }
+    }
+    fclose(out);
+    fclose(in);
+    return written;
+}
+
 static int import_market_data(const char *day_file, const char *market, StockInfo *stocks, int stock_count, FILE *quotes_csv, uint32_t start_date) {
     HANDLE file = INVALID_HANDLE_VALUE;
     HANDLE map = NULL;
@@ -442,6 +523,8 @@ int main(int argc, char **argv) {
     char sz_name_file[PATH_BUF_SIZE];
     char quotes_path[PATH_BUF_SIZE];
     char stocks_path[PATH_BUF_SIZE];
+    char sector_file[PATH_BUF_SIZE];
+    char sector_path[PATH_BUF_SIZE];
 
     path_join(sh_day_file, sizeof(sh_day_file), eastmoney_root, "swc8\\data\\SHANGHAI\\DayData_SH_V43.dat");
     path_join(sz_day_file, sizeof(sz_day_file), eastmoney_root, "swc8\\data\\SHENZHEN\\DayData_SZ_V43.dat");
@@ -449,6 +532,8 @@ int main(int argc, char **argv) {
     find_name_file(sz_name_file, sizeof(sz_name_file), eastmoney_root, "StkQuoteList_V10_0.dat");
     path_join(quotes_path, sizeof(quotes_path), output_dir, "daily_quotes.csv");
     path_join(stocks_path, sizeof(stocks_path), output_dir, "stocks.csv");
+    path_join(sector_file, sizeof(sector_file), eastmoney_root, "swc8\\data\\hs_bk_crc_data_new.dat");
+    path_join(sector_path, sizeof(sector_path), output_dir, "sector_constituents.csv");
 
     if (!file_exists(sh_day_file) || !file_exists(sz_day_file)) {
         fprintf(stderr, "东方财富日线文件不存在：%s 或 %s\n", sh_day_file, sz_day_file);
@@ -487,9 +572,13 @@ int main(int argc, char **argv) {
         write_stocks_csv(stocks_path, all, sh_count + sz_count);
         free(all);
     }
+    int sector_rows = 0;
+    if (file_exists(sector_file)) {
+        sector_rows = export_sector_constituents(sector_file, sector_path);
+    }
 
     char message[256];
-    snprintf(message, sizeof(message), "完成：SH %d只/%d行，SZ %d只/%d行", sh_count, sh_rows, sz_count, sz_rows);
+    snprintf(message, sizeof(message), "完成：SH %d只/%d行，SZ %d只/%d行，板块成分%d行", sh_count, sh_rows, sz_count, sz_rows, sector_rows);
     write_progress("complete", "", 1, 1, message);
     printf("%s\n输出目录：%s\n", message, output_dir);
 

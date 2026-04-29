@@ -55,6 +55,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
         create index if not exists idx_em_daily_quote_symbol_date_desc
           on em_daily_quote(symbol, trade_date desc);
+
+        create table if not exists em_sector (
+          sector_code text primary key,
+          sector_name text not null,
+          source text not null
+        );
+
+        create table if not exists em_sector_constituent_history (
+          sector_code text not null,
+          symbol text not null,
+          market text,
+          source text not null,
+          as_of_date text,
+          primary key (sector_code, symbol, source)
+        );
+
+        create index if not exists idx_em_sector_constituent_symbol
+          on em_sector_constituent_history(symbol);
         """
     )
 
@@ -64,6 +82,8 @@ def reset_tables(conn: sqlite3.Connection) -> None:
         """
         delete from em_daily_quote;
         delete from em_stock;
+        delete from em_sector_constituent_history;
+        delete from em_sector;
         """
     )
 
@@ -155,9 +175,56 @@ def insert_quotes(conn: sqlite3.Connection, rows: list[tuple[str, int, float, fl
     return len(rows)
 
 
+def load_sector_constituents(conn: sqlite3.Connection, path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    sectors: dict[str, tuple[str, str, str]] = {}
+    rows: list[tuple[str, str, str, str, str | None]] = []
+    with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            sector_code = row["sector_code"]
+            source = row["source"]
+            sectors[sector_code] = (sector_code, row["sector_name"], source)
+            rows.append((sector_code, row["symbol"], row["market"], source, row.get("as_of_date") or None))
+            if len(rows) >= BATCH_SIZE:
+                count += insert_sector_constituents(conn, rows)
+                rows.clear()
+    if sectors:
+        conn.executemany(
+            """
+            insert into em_sector(sector_code, sector_name, source)
+            values (?, ?, ?)
+            on conflict(sector_code) do update set
+              sector_name = excluded.sector_name,
+              source = excluded.source
+            """,
+            list(sectors.values()),
+        )
+    if rows:
+        count += insert_sector_constituents(conn, rows)
+    return count
+
+
+def insert_sector_constituents(conn: sqlite3.Connection, rows: list[tuple[str, str, str, str, str | None]]) -> int:
+    conn.executemany(
+        """
+        insert into em_sector_constituent_history(sector_code, symbol, market, source, as_of_date)
+        values (?, ?, ?, ?, ?)
+        on conflict(sector_code, symbol, source) do update set
+          market = excluded.market,
+          as_of_date = excluded.as_of_date
+        """,
+        rows,
+    )
+    return len(rows)
+
+
 def load_eastmoney_csv(input_dir: Path, db_path: Path) -> dict[str, int | str]:
     stocks_csv = input_dir / "stocks.csv"
     quotes_csv = input_dir / "daily_quotes.csv"
+    sectors_csv = input_dir / "sector_constituents.csv"
     if not stocks_csv.exists():
         raise FileNotFoundError(f"缺少股票文件：{stocks_csv}")
     if not quotes_csv.exists():
@@ -169,6 +236,7 @@ def load_eastmoney_csv(input_dir: Path, db_path: Path) -> dict[str, int | str]:
         reset_tables(conn)
         stock_count = load_stocks(conn, stocks_csv)
         quote_count = load_quotes(conn, quotes_csv)
+        sector_constituent_count = load_sector_constituents(conn, sectors_csv)
         conn.execute(
             """
             insert into import_batch(source, input_dir, imported_at, stock_count, quote_count)
@@ -183,6 +251,7 @@ def load_eastmoney_csv(input_dir: Path, db_path: Path) -> dict[str, int | str]:
         "db_path": str(db_path),
         "stock_count": stock_count,
         "quote_count": quote_count,
+        "sector_constituent_count": sector_constituent_count,
     }
 
 
@@ -193,9 +262,11 @@ def main() -> None:
     args = parser.parse_args()
 
     result = load_eastmoney_csv(Path(args.input_dir), Path(args.db))
-    print(f"导入完成：股票 {result['stock_count']} 条，日线 {result['quote_count']} 条，数据库 {result['db_path']}")
+    print(
+        f"导入完成：股票 {result['stock_count']} 条，日线 {result['quote_count']} 条，"
+        f"板块成分 {result['sector_constituent_count']} 条，数据库 {result['db_path']}"
+    )
 
 
 if __name__ == "__main__":
     main()
-

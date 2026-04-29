@@ -43,6 +43,12 @@ def database_status(path: Path) -> dict[str, Any]:
         with sqlite3.connect(path) as conn:
             stock_count = conn.execute("select count(*) from em_stock").fetchone()[0]
             quote_count = conn.execute("select count(*) from em_daily_quote").fetchone()[0]
+            try:
+                sector_count = conn.execute("select count(*) from em_sector").fetchone()[0]
+                sector_constituent_count = conn.execute("select count(*) from em_sector_constituent_history").fetchone()[0]
+            except sqlite3.Error:
+                sector_count = 0
+                sector_constituent_count = 0
             date_range = conn.execute("select min(trade_date), max(trade_date) from em_daily_quote").fetchone()
             latest_batch = conn.execute(
                 """
@@ -57,6 +63,8 @@ def database_status(path: Path) -> dict[str, Any]:
             "exists": True,
             "stock_count": stock_count,
             "quote_count": quote_count,
+            "sector_count": sector_count,
+            "sector_constituent_count": sector_constituent_count,
             "min_trade_date": date_range[0],
             "max_trade_date": date_range[1],
             "latest_batch": {
@@ -74,6 +82,7 @@ def eastmoney_status() -> dict[str, Any]:
     sz_day = DEFAULT_EASTMONEY_ROOT / "swc8" / "data" / "SHENZHEN" / "DayData_SZ_V43.dat"
     stocks_csv = DEFAULT_OUTPUT_DIR / "stocks.csv"
     quotes_csv = DEFAULT_OUTPUT_DIR / "daily_quotes.csv"
+    sectors_csv = DEFAULT_OUTPUT_DIR / "sector_constituents.csv"
     progress_json = DEFAULT_OUTPUT_DIR / "eastmoney_import.progress.json"
 
     return {
@@ -88,6 +97,7 @@ def eastmoney_status() -> dict[str, Any]:
         "generated_files": {
             "stocks_csv": {"path": str(stocks_csv), "exists": stocks_csv.exists(), "rows": count_csv_rows(stocks_csv)},
             "daily_quotes_csv": {"path": str(quotes_csv), "exists": quotes_csv.exists(), "rows": count_csv_rows(quotes_csv)},
+            "sector_constituents_csv": {"path": str(sectors_csv), "exists": sectors_csv.exists(), "rows": count_csv_rows(sectors_csv)},
             "progress_json": {"path": str(progress_json), "exists": progress_json.exists()},
         },
         "database": database_status(DEFAULT_DB_PATH),
