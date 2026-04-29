@@ -3,6 +3,7 @@ const state = {
   modelConfig: null,
   backtestResult: null,
   selectedThemeId: null,
+  selectedSectorCode: null,
   stockSort: { key: "amount", direction: "desc" },
 };
 
@@ -29,7 +30,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, sectors] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -41,6 +42,7 @@ async function loadDashboard() {
     fetchJson("/api/v1/audit/logs?limit=80"),
     fetchJson("/api/v1/auth/roles"),
     fetchJson(`/api/v1/catalysts?date=${date}&limit=50`),
+    fetchJson("/api/v1/sectors?limit=80"),
   ]);
 
   state.ranking = ranking;
@@ -58,11 +60,16 @@ async function loadDashboard() {
   renderAudit(audit);
   renderRoles(roles);
   renderCatalysts(catalysts);
+  renderSectors(sectors);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
   if (firstTheme) {
     await selectTheme(state.selectedThemeId || firstTheme.theme_id);
+  }
+  const firstSector = sectors.items && sectors.items[0];
+  if (firstSector) {
+    await selectSector(state.selectedSectorCode || firstSector.sector_code);
   }
 }
 
@@ -128,6 +135,36 @@ function renderMatrix(matrix) {
       }).join("")}
     </tr>
   `).join("");
+}
+
+function renderSectors(payload) {
+  const items = payload.items || [];
+  $("sectorMeta").textContent = `${items.length} 个板块`;
+  $("sectorBody").innerHTML = items.map((item) => `
+    <tr data-sector-code="${item.sector_code}" class="${item.sector_code === state.selectedSectorCode ? "selected" : ""}">
+      <td>${item.sector_code}</td>
+      <td><strong>${item.sector_name}</strong></td>
+      <td>${item.stock_count}</td>
+    </tr>
+  `).join("");
+  document.querySelectorAll("#sectorBody tr").forEach((row) => {
+    row.addEventListener("click", () => selectSector(row.dataset.sectorCode));
+  });
+}
+
+async function selectSector(sectorCode) {
+  state.selectedSectorCode = sectorCode;
+  const payload = await fetchJson(`/api/v1/sectors/${sectorCode}/constituents?limit=500`);
+  $("sectorConstituentBody").innerHTML = (payload.items || []).map((item) => `
+    <tr>
+      <td>${item.symbol}</td>
+      <td><strong>${item.name}</strong></td>
+      <td>${item.market || "-"}</td>
+    </tr>
+  `).join("");
+  document.querySelectorAll("#sectorBody tr").forEach((row) => {
+    row.classList.toggle("selected", row.dataset.sectorCode === sectorCode);
+  });
 }
 
 async function loadDataSourceStatus() {

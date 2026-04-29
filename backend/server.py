@@ -22,6 +22,7 @@ from data_quality import data_quality_payload
 from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
 from review_store import save_daily_review
+from sector_store import list_sectors, sector_constituents
 from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
 from theme_universe import PORTFOLIO
 
@@ -111,6 +112,16 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/catalysts":
             limit = int(query.get("limit", ["100"])[0])
             return self.send_json({"items": list_catalysts(date, limit)})
+
+        if path == "/api/v1/sectors":
+            limit = int(query.get("limit", ["100"])[0])
+            keyword = query.get("q", [""])[0]
+            return self.send_json({"items": list_sectors(keyword, limit)})
+
+        if path.startswith("/api/v1/sectors/") and path.endswith("/constituents"):
+            sector_code = unquote(path.split("/")[4])
+            limit = int(query.get("limit", ["500"])[0])
+            return self.send_json(sector_constituents(sector_code, limit))
 
         if path == "/api/v1/model/config":
             return self.send_json({"active": get_active_config(), "items": list_configs()})

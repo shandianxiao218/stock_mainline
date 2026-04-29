@@ -410,6 +410,12 @@ button.secondary,
   overflow-x: auto;
 }
 
+.sector-browser {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);
+  gap: 14px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -739,6 +745,7 @@ h4 {
   .catalyst-form,
   .config-row,
   .detail-grid,
+  .sector-browser,
   .portfolio-grid,
   .split-list {
     grid-template-columns: 1fr;
