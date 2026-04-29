@@ -47,6 +47,7 @@ MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和
 | `backend/model_config_store.py` | 保存和读取本地模型参数版本 |
 | `backend/review_store.py` | 保存单日复盘评分、风险、置信度和报告 |
 | `backend/audit_store.py` | 保存本地审计日志 |
+| `backend/permissions.py` | 定义本地角色和权限 |
 | `backend/server.py` | 本地 HTTP 服务、API 路由、静态 UI |
 | `backend/scoring.py` | 热度、延续性、风险、置信度、自动聚合 |
 | `backend/sample_data.py` | Demo 市场、板块、自选股、持仓数据 |
@@ -126,6 +127,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 日志审计：`GET /api/v1/audit/logs` 返回 API 访问、参数修改、复盘保存、回测和本地自选/持仓变更记录。
 - 风险历史：`GET /api/v1/themes/{theme_id}/risk-history` 返回单主线近 N 日风险扣分、状态和主要风险项。
 - 回测页面：支持模型版本、起止日期、持有期、Top N 参数配置和样本 CSV 下载。
+- 权限角色：`GET /api/v1/auth/roles` 返回访客、普通用户、研究员、管理员、审计员权限；个人版默认本地管理员。
 - Excel 导出：包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。
 
 ## 与 SRS 的差异决策记录
