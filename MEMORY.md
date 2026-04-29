@@ -44,6 +44,7 @@
 - 本地权限角色已实现，包含访客、普通用户、研究员、管理员、审计员；个人版默认本地管理员，写操作会检查 `X-User-Role`。
 - 新闻催化事件库已落地 SQLite，支持按日期录入/查看主线催化、S/A/B/C 等级、来源和备注；评分模型暂未自动引用人工催化。
 - `backend/test_scoring.py` 提供本地 unittest 烟测，覆盖榜单分数、风险上限、置信度组件、主线矩阵和因子有效性。
+- 东方财富 C 导入器已解析 `swc8\data\hs_bk_crc_data_new.dat`，生成 `sector_constituents.csv`；SQLite 已有 `em_sector` 和 `em_sector_constituent_history`，当前验证为 1012 个板块、85640 条成分关系。
 
 ## 当前数据边界
 
@@ -56,3 +57,4 @@
 - `local_model_config` 用于保存本地模型参数版本，当前只管理主公式权重和风险扣分上限。
 - `local_audit_log` 用于保存本地审计日志。
 - `local_catalyst_event` 用于保存人工催化事件和催化等级。
+- `em_sector`、`em_sector_constituent_history` 用于保存东方财富板块和成分关系；当前评分仍未切换到这些真实板块成分。

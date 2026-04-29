@@ -175,6 +175,8 @@ GET /api/v1/data/eastmoney/status
 
 返回东方财富本地路径、C 导入器、源文件存在性、CSV 导出行数、SQLite 入库状态和推荐构建/导入/装载命令。Python 后端只读取 C 导出的 CSV 与 SQLite 数据库，不读取东方财富二进制文件。
 
+当前状态中包含 `sector_constituents_csv`、`database.sector_count` 和 `database.sector_constituent_count`，用于验证东方财富真实板块成分导入情况。
+
 ## 回测
 
 ```http

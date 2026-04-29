@@ -77,12 +77,14 @@ Risk penalty is capped at 20. Confidence uses liquidity, top theme score spread,
 
 - `C:\eastmoney\swc8\data\SHANGHAI\DayData_SH_V43.dat`
 - `C:\eastmoney\swc8\data\SHENZHEN\DayData_SZ_V43.dat`
+- `C:\eastmoney\swc8\data\hs_bk_crc_data_new.dat`
 - `StkQuoteList_V10_1.dat`、`StkQuoteList_V10_0.dat` 股票名称文件，兼容 `StkQuoteList` 与 `StkQuoteListNsl` 目录
 
 输出：
 
 - `backend\data\eastmoney\stocks.csv`
 - `backend\data\eastmoney\daily_quotes.csv`
+- `backend\data\eastmoney\sector_constituents.csv`
 - `backend\data\radar.db`
 
 Tushare 保留为备用或补充数据源，后续可用于交易日历、行业分类、指数数据等。
@@ -100,6 +102,8 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - `import_batch`：导入批次记录。
 - `em_stock`：东方财富股票列表。
 - `em_daily_quote`：东方财富个股日线。
+- `em_sector`：东方财富板块列表。
+- `em_sector_constituent_history`：东方财富板块成分关系。
 - `local_theme_score_daily`：本地保存的主线评分结果。
 - `local_risk_signal_daily`：本地保存的风险信号。
 - `local_confidence_daily`：本地保存的置信度结果。
@@ -148,6 +152,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 | 2026-04-30 | 成分股表先用日线近似“是否炸板”，游资参与显示为“未接入” | SRS 要求区分触板、炸板、封板质量，并可参考龙虎榜/游资数据 | 当前只接入东方财富日线，尚无逐笔/触板/龙虎榜数据；先把字段和交互打通，后续接真实数据源 | 成分股明细、风险扣分准确性、短线情绪指标 |
 | 2026-04-30 | 因子有效性先输出动态权重建议，不自动改写评分因子权重 | SRS 设计了最终因子权重动态修正机制 | 当前本地样本只覆盖少量交易日，直接自动改权重容易放大样本噪声；先作为研究页面展示 | 因子分析页、后续模型配置联动 |
 | 2026-04-30 | 人工催化事件先落库展示，暂不自动影响评分 | SRS 期望催化强度进入热度和延续性评分 | 当前事件来源为人工录入，尚未建立主题归因质量控制；先完成可追溯事件库 | 催化页面、后续评分接入 |
+| 2026-04-30 | 东方财富真实板块成分先入库，评分暂未替换人工主题配置 | SRS 要求底层板块计算、上层主线输出 | 已解析本地板块成分，但主线聚合映射需要重新设计，直接替换会改变当前 demo 行为 | 数据导入、后续主线聚合 |
 
 ## 运行
 
