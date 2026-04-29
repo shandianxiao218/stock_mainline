@@ -38,6 +38,7 @@
 - 模型参数配置已持久化到 SQLite，页面可调整热度权重、延续性权重、风险扣分上限和参数版本；主线评分接口读取当前生效配置。
 - 因子有效性页面已可基于本地 SQLite 可用交易日计算 5 日/20 日 IC、Rank IC、双窗口方向和动态权重建议；建议暂不自动改写评分权重。
 - 置信度拆解已展示流动性、主线分差、风险稳定、市场广度和主线一致性，并支持近 20 日历史查看。
+- 日志审计已写入 SQLite，覆盖 API 访问、参数修改、复盘保存、回测运行、自选股和持仓变更，页面可查看最近记录。
 
 ## 当前数据边界
 
@@ -48,3 +49,4 @@
 - `local_theme_score_daily`、`local_risk_signal_daily`、`local_confidence_daily`、`local_daily_report` 用于保存本地复盘结果。
 - `local_watchlist` 用于保存自选股，`local_position` 用于保存持仓。
 - `local_model_config` 用于保存本地模型参数版本，当前只管理主公式权重和风险扣分上限。
+- `local_audit_log` 用于保存本地审计日志。
