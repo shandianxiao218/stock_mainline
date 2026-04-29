@@ -596,11 +596,129 @@ def portfolio_risk(date: str) -> dict[str, Any]:
 
 
 def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
+    start_date = int(str(body.get("start_date", "20210101")).replace("-", ""))
+    end_date = int(str(body.get("end_date", "20991231")).replace("-", ""))
+    holding_period = max(1, int(body.get("holding_period", 3)))
+    top_n = max(1, int(body.get("top_n", 5)))
+
+    with sqlite3.connect(DB_PATH) as conn:
+        dates = [
+            row[0]
+            for row in conn.execute(
+                """
+                select distinct trade_date
+                from em_daily_quote
+                where trade_date between ? and ?
+                order by trade_date
+                """,
+                (start_date, end_date),
+            )
+        ]
+        if len(dates) <= holding_period:
+            return {
+                "task_id": "local_sqlite_backtest",
+                "status": "insufficient_data",
+                "request": body,
+                "metrics": {},
+                "note": "可用交易日数量不足，无法完成指定持有周期回测。",
+            }
+
+        samples = []
+        all_rank_scores: list[float] = []
+        all_future_returns: list[float] = []
+        equity = 1.0
+        equity_curve = []
+        for idx, trade_date in enumerate(dates[:-holding_period]):
+            exit_date = dates[idx + holding_period]
+            themes, _market = build_themes_for_date(date_text(trade_date))
+            theme_returns = []
+            for theme in themes:
+                symbols = sorted({stock["symbol"] for stock in theme.get("stock_metrics", [])})
+                future_return = future_theme_return(conn, symbols, trade_date, exit_date)
+                if future_return is None:
+                    continue
+                theme_returns.append((theme, future_return))
+                all_rank_scores.append(theme["theme_score"])
+                all_future_returns.append(future_return)
+
+            if not theme_returns:
+                continue
+            ranked = sorted(theme_returns, key=lambda pair: pair[0]["theme_score"], reverse=True)
+            selected = ranked[:top_n]
+            selected_return = safe_mean([ret for _theme, ret in selected])
+            benchmark_return = safe_mean([ret for _theme, ret in theme_returns])
+            excess_return = selected_return - benchmark_return
+            equity *= 1 + selected_return
+            equity_curve.append(equity)
+            samples.append({
+                "trade_date": date_text(trade_date),
+                "exit_date": date_text(exit_date),
+                "selected_return": selected_return,
+                "benchmark_return": benchmark_return,
+                "excess_return": excess_return,
+                "selected_themes": [theme["theme_name"] for theme, _ret in selected],
+            })
+
+    returns = [sample["selected_return"] for sample in samples]
+    excess_returns = [sample["excess_return"] for sample in samples]
+    metrics = {
+        "sample_count": len(samples),
+        "start_date": date_text(dates[0]),
+        "end_date": date_text(dates[-1]),
+        "holding_period": holding_period,
+        "top_n": top_n,
+        "avg_return": round(safe_mean(returns) * 100, 3),
+        "avg_excess_return": round(safe_mean(excess_returns) * 100, 3),
+        "win_rate": round(sum(1 for ret in returns if ret > 0) / len(returns), 4) if returns else None,
+        "excess_win_rate": round(sum(1 for ret in excess_returns if ret > 0) / len(excess_returns), 4) if excess_returns else None,
+        "max_drawdown": round(max_drawdown(equity_curve) * 100, 3),
+        "rank_ic": round(pearson(all_rank_scores, all_future_returns), 4) if len(all_rank_scores) >= 3 else None,
+    }
     return {
-        "task_id": "local_sqlite_backtest_placeholder",
-        "status": "not_implemented",
+        "task_id": "local_sqlite_backtest",
+        "status": "completed",
         "request": body,
-        "metrics": {},
-        "note": "真实回测将在板块快照和历史主线评分入库后执行；当前版本已具备真实日线评分基础。",
+        "metrics": metrics,
+        "samples": samples[-20:],
+        "note": "回测基于当前 SQLite 可用日线区间逐日重放；不会使用评分日之后的数据计算当日排名。",
     }
 
+
+def future_theme_return(conn: sqlite3.Connection, symbols: list[str], entry_date: int, exit_date: int) -> float | None:
+    returns = []
+    for symbol in symbols:
+        row = conn.execute(
+            """
+            select e.close, x.close
+            from em_daily_quote e
+            join em_daily_quote x on x.symbol = e.symbol
+            where e.symbol = ? and e.trade_date = ? and x.trade_date = ?
+            """,
+            (symbol, entry_date, exit_date),
+        ).fetchone()
+        if row and row[0] and row[1]:
+            returns.append(row[1] / row[0] - 1)
+    return safe_mean(returns) if returns else None
+
+
+def max_drawdown(equity_curve: list[float]) -> float:
+    peak = 1.0
+    max_dd = 0.0
+    for value in equity_curve:
+        peak = max(peak, value)
+        if peak:
+            max_dd = min(max_dd, value / peak - 1)
+    return max_dd
+
+
+def pearson(xs: list[float], ys: list[float]) -> float:
+    if len(xs) != len(ys) or len(xs) < 2:
+        return 0.0
+    mx = mean(xs)
+    my = mean(ys)
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    den_x = math.sqrt(sum((x - mx) ** 2 for x in xs))
+    den_y = math.sqrt(sum((y - my) ** 2 for y in ys))
+    if den_x == 0 or den_y == 0:
+        return 0.0
+    return num / (den_x * den_y)
