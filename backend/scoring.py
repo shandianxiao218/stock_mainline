@@ -260,7 +260,7 @@ def ranking_payload(date: str, period: str = "short") -> dict[str, Any]:
     }
 
 
-def find_theme(theme_id: str) -> dict[str, Any] | None:
+def find_theme(theme_id: str, date: str | None = None) -> dict[str, Any] | None:
     return next((theme for theme in build_themes() if theme["theme_id"] == theme_id), None)
 
 
@@ -359,4 +359,3 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
         },
         "note": "当前为接口联调用样例结果；真实5年逐日重放依赖Tushare历史快照入库后启用。",
     }
-

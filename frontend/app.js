@@ -114,6 +114,13 @@ function renderDetail(detail) {
   $("branches").innerHTML = detail.branches.map((name) => `<span class="chip">${name}</span>`).join("");
   $("coreStocks").innerHTML = detail.core_stocks.map((name) => `<span class="chip">${name}</span>`).join("");
   $("modelExplanation").textContent = detail.model_explanation;
+  $("stockMetrics").innerHTML = (detail.stock_metrics || []).slice(0, 8).map((stock) => `
+    <div class="stock-metric">
+      <strong>${stock.name}</strong>
+      <span class="${stock.pct1 >= 0 ? "up" : "down"}">${stock.pct1.toFixed(2)}%</span>
+      <small>3日 ${stock.pct3.toFixed(2)}% / 5日 ${stock.pct5.toFixed(2)}% / 成交 ${(stock.amount / 100000000).toFixed(1)}亿</small>
+    </div>
+  `).join("") || "<p>暂无成分股表现</p>";
 
   $("riskList").innerHTML = detail.risks.map((risk) => `
     <div class="risk-item">

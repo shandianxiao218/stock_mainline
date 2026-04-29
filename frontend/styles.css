@@ -316,13 +316,15 @@ h4 {
 }
 
 .risk-list,
-.stock-list {
+.stock-list,
+.stock-metrics {
   display: grid;
   gap: 10px;
 }
 
 .risk-item,
-.stock-item {
+.stock-item,
+.stock-metric {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
@@ -331,7 +333,8 @@ h4 {
 }
 
 .risk-item strong,
-.stock-item strong {
+.stock-item strong,
+.stock-metric strong {
   display: flex;
   justify-content: space-between;
   gap: 10px;
@@ -342,6 +345,29 @@ h4 {
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.stock-performance {
+  margin-top: 18px;
+}
+
+.stock-metric {
+  grid-template-columns: 90px 72px 1fr;
+  align-items: center;
+}
+
+.stock-metric small {
+  color: var(--muted);
+}
+
+.up {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.down {
+  color: var(--green);
+  font-weight: 700;
 }
 
 .severity-high,
@@ -401,4 +427,3 @@ h4 {
     flex-direction: column;
   }
 }
-

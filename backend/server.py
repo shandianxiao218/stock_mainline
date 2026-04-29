@@ -15,8 +15,14 @@ ROOT_DIR = CURRENT_DIR.parent
 FRONTEND_DIR = ROOT_DIR / "frontend"
 sys.path.insert(0, str(CURRENT_DIR))
 
-from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload
 from eastmoney_data import eastmoney_status
+
+try:
+    from real_scoring import backtest_result, daily_report, db_ready, detail_payload, find_theme, portfolio_risk, ranking_payload
+    if not db_ready():
+        raise ImportError("本地 SQLite 数据库不存在")
+except ImportError:
+    from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -38,12 +44,12 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/v1/themes/") and path.endswith("/risks"):
             theme_id = unquote(path.split("/")[4])
-            theme = find_theme(theme_id)
+            theme = find_theme(theme_id, date)
             return self.send_json({"date": date, "theme_id": theme_id, "items": theme["risks"]}) if theme else self.send_error_json(404, "Theme not found")
 
         if path.startswith("/api/v1/themes/") and path.endswith("/factor-contribution"):
             theme_id = unquote(path.split("/")[4])
-            theme = find_theme(theme_id)
+            theme = find_theme(theme_id, date)
             if not theme:
                 return self.send_error_json(404, "Theme not found")
             return self.send_json({"date": date, "theme_id": theme_id, "factor_contribution": theme["factor_contribution"]})
