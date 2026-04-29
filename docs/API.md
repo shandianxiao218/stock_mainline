@@ -54,6 +54,42 @@ GET /api/v1/portfolio/risk?date=2026-04-29
 
 返回自选股暴露、持仓暴露和高风险主线重合情况。
 
+## 近20日主线矩阵
+
+```http
+GET /api/v1/themes/matrix?date=2026-04-29&days=20
+```
+
+返回近 N 个交易日的主线分、排名、风险和状态矩阵。
+
+## 股票 K 线
+
+```http
+GET /api/v1/stocks/{symbol}/kline?date=2026-04-29&window=80
+```
+
+返回指定股票在目标日期之前的本地日 K 数据。
+
+## 自选股管理
+
+```http
+GET /api/v1/watchlist
+POST /api/v1/watchlist
+DELETE /api/v1/watchlist/{symbol}
+```
+
+自选股保存到本地 SQLite。
+
+## 持仓管理
+
+```http
+GET /api/v1/positions
+POST /api/v1/positions
+DELETE /api/v1/positions/{symbol}
+```
+
+持仓保存到本地 SQLite，并参与持仓风险提示。
+
 ## 东方财富数据源状态
 
 ```http

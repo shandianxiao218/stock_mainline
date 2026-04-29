@@ -108,6 +108,10 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 持仓/自选风险：按 `backend/theme_universe.py` 中的成分代码匹配当前主线风险。
 - 回测：按 SQLite 可用交易日逐日重放，排名只使用当日及以前数据，收益验证使用后续持有期数据。
 - 复盘落库：`POST /api/v1/reviews/save?date=YYYY-MM-DD` 保存当日评分和报告。
+- 主线矩阵：`GET /api/v1/themes/matrix?date=YYYY-MM-DD&days=20` 返回近 20 个交易日主线分矩阵。
+- 成分股详情：显示全部成分股，支持按 OCHL、成交量、成交额、涨幅、近 5 日涨幅、炸板、游资参与排序。
+- K 线：双击成分股后通过 `GET /api/v1/stocks/{symbol}/kline` 显示本地日 K。
+- 自选股/持仓：分别使用 `local_watchlist` 和 `local_position` 持久化。
 
 ## 与 SRS 的差异决策记录
 
