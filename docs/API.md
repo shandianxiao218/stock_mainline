@@ -54,6 +54,25 @@ GET /api/v1/reports/daily?date=2026-04-29
 
 返回自然语言日度复盘报告。
 
+## 新闻催化事件
+
+```http
+GET /api/v1/catalysts?date=2026-04-29&limit=100
+POST /api/v1/catalysts
+Content-Type: application/json
+
+{
+  "trade_date": "2026-04-29",
+  "theme_name": "资源涨价",
+  "level": "A",
+  "title": "价格上行催化",
+  "source": "人工录入",
+  "note": "可选备注"
+}
+```
+
+保存或查看人工催化事件。等级支持 S/A/B/C。
+
 ## 自选股与持仓风险
 
 ```http
