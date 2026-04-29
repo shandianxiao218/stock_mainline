@@ -108,6 +108,14 @@ Content-Type: application/json
 
 返回或保存本地模型参数版本。保存时会将热度权重和延续性权重归一化，并将该版本设为当前生效配置。
 
+## 因子有效性
+
+```http
+GET /api/v1/factors/effectiveness?date=2026-04-29&holding_period=3
+```
+
+返回因子 5 日/20 日 IC、Rank IC、双窗口方向、基础权重、建议权重和调整动作。当前建议仅用于研究展示，不会自动改写评分权重。
+
 ## 东方财富数据源状态
 
 ```http
