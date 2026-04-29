@@ -212,14 +212,23 @@ button.secondary,
   align-items: end;
 }
 
-.config-form label {
+.config-form label,
+.backtest-form label {
   display: grid;
   gap: 6px;
 }
 
-.config-form span {
+.config-form span,
+.backtest-form span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.backtest-form {
+  display: grid;
+  grid-template-columns: 1.1fr repeat(4, minmax(110px, 0.8fr)) auto auto;
+  gap: 10px;
+  align-items: end;
 }
 
 .config-history {
@@ -665,6 +674,7 @@ h4 {
   .quality-grid,
   .confidence-components,
   .config-form,
+  .backtest-form,
   .config-row,
   .detail-grid,
   .portfolio-grid,

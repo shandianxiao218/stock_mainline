@@ -1,6 +1,7 @@
 const state = {
   ranking: null,
   modelConfig: null,
+  backtestResult: null,
   selectedThemeId: null,
   stockSort: { key: "amount", direction: "desc" },
 };
@@ -49,6 +50,7 @@ async function loadDashboard() {
   renderPortfolio(portfolio);
   renderQuality(quality);
   renderModelConfig(modelConfig);
+  renderBacktestDefaults(modelConfig);
   renderFactors(factors);
   renderConfidenceHistory(ranking, confidenceHistory);
   renderAudit(audit);
@@ -189,6 +191,12 @@ function renderModelConfig(payload) {
       </div>
     `;
   }).join("");
+}
+
+function renderBacktestDefaults(payload) {
+  const active = (payload && payload.active) || {};
+  $("backtestModelVersion").value = active.model_version || "v1.0-local";
+  $("backtestEnd").value = dateValue();
 }
 
 function renderFactors(payload) {
@@ -366,21 +374,47 @@ function auditName(type) {
   })[type] || type;
 }
 
-async function runBacktest() {
+async function runBacktest(event) {
+  if (event) event.preventDefault();
   const result = await fetchJson("/api/v1/backtest/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      start_date: "2021-04-29",
-      end_date: dateValue(),
-      model_version: "v1.0",
-      holding_period: 3,
-      top_n: 5,
+      start_date: $("backtestStart").value || "2021-04-29",
+      end_date: $("backtestEnd").value || dateValue(),
+      model_version: $("backtestModelVersion").value.trim() || "v1.0-local",
+      holding_period: Number($("backtestHolding").value || 3),
+      top_n: Number($("backtestTopN").value || 5),
     }),
   });
+  state.backtestResult = result;
   const target = $("backtestResult");
   target.style.display = "block";
   target.textContent = formatBacktest(result);
+}
+
+function downloadBacktestCsv() {
+  const result = state.backtestResult;
+  if (!result || !result.samples || !result.samples.length) return;
+  const rows = [
+    ["trade_date", "exit_date", "selected_return", "benchmark_return", "excess_return", "selected_themes"],
+    ...result.samples.map((sample) => [
+      sample.trade_date,
+      sample.exit_date,
+      sample.selected_return,
+      sample.benchmark_return,
+      sample.excess_return,
+      sample.selected_themes.join("|"),
+    ]),
+  ];
+  const csv = rows.map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `backtest_${dateValue()}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 async function saveReview() {
@@ -542,7 +576,8 @@ function formatIc(value) {
 $("refreshBtn").addEventListener("click", loadDashboard);
 $("dateInput").addEventListener("change", loadDashboard);
 $("periodInput").addEventListener("change", loadDashboard);
-$("backtestBtn").addEventListener("click", runBacktest);
+$("backtestForm").addEventListener("submit", runBacktest);
+$("downloadBacktestBtn").addEventListener("click", downloadBacktestCsv);
 $("saveReviewBtn").addEventListener("click", saveReview);
 $("watchlistForm").addEventListener("submit", addWatchlist);
 $("positionForm").addEventListener("submit", addPosition);

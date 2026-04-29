@@ -258,9 +258,32 @@
             </div>
             <div class="actions">
               <button id="saveReviewBtn" type="button" class="secondary">保存复盘</button>
-              <button id="backtestBtn" type="button" class="secondary">运行回测</button>
             </div>
           </div>
+          <form id="backtestForm" class="backtest-form">
+            <label>
+              <span>模型版本</span>
+              <input id="backtestModelVersion" type="text" value="v1.0-local">
+            </label>
+            <label>
+              <span>开始日期</span>
+              <input id="backtestStart" type="date" value="2021-04-29">
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input id="backtestEnd" type="date" value="2026-04-29">
+            </label>
+            <label>
+              <span>持有期</span>
+              <input id="backtestHolding" type="number" min="1" max="20" value="3">
+            </label>
+            <label>
+              <span>Top N</span>
+              <input id="backtestTopN" type="number" min="1" max="20" value="5">
+            </label>
+            <button type="submit" class="secondary">运行回测</button>
+            <button id="downloadBacktestBtn" type="button" class="secondary">下载样本CSV</button>
+          </form>
           <p id="reportText" class="report-text"></p>
           <pre id="backtestResult" class="backtest-result"></pre>
         </section>
