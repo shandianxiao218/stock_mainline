@@ -15,6 +15,11 @@ try:
 except ImportError:
     snapshot_status = None
 
+try:
+    from build_limit_signals import limit_signal_status
+except ImportError:
+    limit_signal_status = None
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_EASTMONEY_ROOT = Path("C:/eastmoney")
@@ -88,9 +93,11 @@ def eastmoney_status() -> dict[str, Any]:
         "database": database_status(DEFAULT_DB_PATH),
         "latest_saved_review": latest_saved_review() if latest_saved_review else None,
         "sector_snapshot": snapshot_status() if snapshot_status else None,
+        "limit_signal": limit_signal_status() if limit_signal_status else None,
         "import_command": "tools\\eastmoney_import.exe C:\\eastmoney backend\\data\\eastmoney 20200101",
         "load_command": "python backend\\load_eastmoney_csv.py",
         "snapshot_command": "python backend\\build_sector_snapshots.py --end-date 2026-04-29 --days 260",
+        "limit_signal_command": "python backend\\build_limit_signals.py --end-date 2026-04-29 --days 260",
         "build_command": (
             "clang --target=x86_64-w64-windows-gnu --sysroot=C:\\ProgramData\\mingw64\\mingw64 "
             "-O2 -std=c11 -Wall -Wextra -o tools\\eastmoney_import.exe tools\\eastmoney_import.c"

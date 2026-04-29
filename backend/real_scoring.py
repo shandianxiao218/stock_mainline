@@ -221,6 +221,14 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     histories = load_histories(conn, symbols, trade_date)
     metrics = [stock_metrics(symbol, history) for symbol, history in histories.items()]
     metrics = [item for item in metrics if item]
+    signal_map = load_limit_signals(conn, symbols, date_text(trade_date))
+    for item in metrics:
+        signal = signal_map.get(item["symbol"])
+        if signal:
+            item["limit_up"] = bool(signal["sealed_limit"])
+            item["touched_limit"] = bool(signal["touched_limit"])
+            item["limit_break"] = bool(signal["limit_break"])
+            item["consecutive_boards"] = signal["consecutive_boards"]
 
     if not metrics:
         raw = {**sector, "core_stocks": [name for _code, name in sector["stocks"]], "factors": {}, "risks": {"数据缺失": 12.0}}
@@ -300,6 +308,8 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
                 "amount": round(item["amount"], 2),
                 "limit_up": item["limit_up"],
                 "limit_break": item["limit_break"],
+                "touched_limit": item.get("touched_limit", False),
+                "consecutive_boards": item.get("consecutive_boards", 0),
                 "hot_money": "未接入",
             }
             for item in sorted(metrics, key=lambda row: row["amount"], reverse=True)
@@ -320,6 +330,32 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         },
     }
     return SectorScore(raw, heat, continuation, round(risk, 2), composite)
+
+
+def load_limit_signals(conn: sqlite3.Connection, symbols: list[str], trade_date: str) -> dict[str, dict[str, Any]]:
+    if not symbols:
+        return {}
+    placeholders = ",".join("?" for _ in symbols)
+    try:
+        rows = conn.execute(
+            f"""
+            select symbol, touched_limit, sealed_limit, limit_break, consecutive_boards
+            from local_limit_signal_daily
+            where trade_date = ? and symbol in ({placeholders})
+            """,
+            [trade_date, *symbols],
+        ).fetchall()
+    except sqlite3.Error:
+        return {}
+    return {
+        row[0]: {
+            "touched_limit": bool(row[1]),
+            "sealed_limit": bool(row[2]),
+            "limit_break": bool(row[3]),
+            "consecutive_boards": row[4],
+        }
+        for row in rows
+    }
 
 
 def similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
