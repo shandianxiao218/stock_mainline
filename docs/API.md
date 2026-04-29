@@ -90,6 +90,24 @@ DELETE /api/v1/positions/{symbol}
 
 持仓保存到本地 SQLite，并参与持仓风险提示。
 
+## 模型参数配置
+
+```http
+GET /api/v1/model/config
+POST /api/v1/model/config
+Content-Type: application/json
+
+{
+  "model_version": "v1.0-local",
+  "config_version": "default",
+  "heat_weight": 0.4,
+  "continuation_weight": 0.6,
+  "risk_cap": 20
+}
+```
+
+返回或保存本地模型参数版本。保存时会将热度权重和延续性权重归一化，并将该版本设为当前生效配置。
+
 ## 东方财富数据源状态
 
 ```http
@@ -129,4 +147,4 @@ POST /api/v1/reviews/save?date=2026-04-29
 GET /api/v1/export/themes.xlsx?date=2026-04-29
 ```
 
-下载主线榜单和风险明细 Excel 文件。
+下载 Excel 文件。当前包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。

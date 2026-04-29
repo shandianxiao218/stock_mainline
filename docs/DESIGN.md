@@ -44,6 +44,7 @@ MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和
 | `backend/load_eastmoney_csv.py` | 将 C 导出的东方财富 CSV 装载进本地 SQLite |
 | `backend/theme_universe.py` | 当前可维护的主题/成分配置 |
 | `backend/real_scoring.py` | 基于 SQLite 日线计算主线评分、风险、置信度和回测 |
+| `backend/model_config_store.py` | 保存和读取本地模型参数版本 |
 | `backend/review_store.py` | 保存单日复盘评分、风险、置信度和报告 |
 | `backend/server.py` | 本地 HTTP 服务、API 路由、静态 UI |
 | `backend/scoring.py` | 热度、延续性、风险、置信度、自动聚合 |
@@ -55,13 +56,15 @@ MVP 暂不包含盘中刷新、交易下单、公开投资建议、PDF 导出和
 
 ## MVP 评分
 
-Theme score:
+Theme score 默认配置：
 
 ```text
 theme_score = 0.4 * heat_score + 0.6 * continuation_score - risk_penalty
 ```
 
 Risk penalty is capped at 20. Confidence uses liquidity, top theme score spread, risk stability, market breadth, and theme consistency.
+
+当前 Web 端已支持调整主公式权重和风险扣分上限，参数写入 SQLite `local_model_config`，榜单和详情计算读取当前生效配置。
 
 ## 数据源策略
 
@@ -98,6 +101,9 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - `local_risk_signal_daily`：本地保存的风险信号。
 - `local_confidence_daily`：本地保存的置信度结果。
 - `local_daily_report`：本地保存的自然语言复盘报告。
+- `local_watchlist`：本地自选股。
+- `local_position`：本地持仓。
+- `local_model_config`：本地模型参数版本。
 
 后续需要在此基础上增加板块成分、板块行情快照、涨停情绪指标、主线评分结果、风险信号和置信度结果。`docs/database.sql` 是长期 PostgreSQL 草案，个人本地版本优先使用 SQLite 快速迭代。
 
@@ -112,6 +118,8 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 成分股详情：显示全部成分股，支持按 OCHL、成交量、成交额、涨幅、近 5 日涨幅、炸板、游资参与排序。
 - K 线：双击成分股后通过 `GET /api/v1/stocks/{symbol}/kline` 显示本地日 K。
 - 自选股/持仓：分别使用 `local_watchlist` 和 `local_position` 持久化。
+- 模型配置：`GET/POST /api/v1/model/config` 管理当前生效参数，主线评分公式即时读取。
+- Excel 导出：包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。
 
 ## 与 SRS 的差异决策记录
 
