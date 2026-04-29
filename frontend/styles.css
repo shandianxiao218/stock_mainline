@@ -222,10 +222,55 @@ button.secondary,
   overflow-x: auto;
 }
 
+.matrix-wrap {
+  overflow-x: auto;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   min-width: 880px;
+}
+
+.matrix-table {
+  min-width: 980px;
+}
+
+.matrix-table th,
+.matrix-table td {
+  text-align: center;
+  padding: 8px 7px;
+}
+
+.matrix-table th:first-child,
+.matrix-table td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 1;
+}
+
+.matrix-cell {
+  color: #ffffff;
+  font-weight: 700;
+  border-radius: 4px;
+}
+
+.matrix-cell.hot {
+  background: #c24135;
+}
+
+.matrix-cell.warm {
+  background: #b7791f;
+}
+
+.matrix-cell.cold {
+  background: #64748b;
+}
+
+.empty-cell {
+  color: var(--muted);
 }
 
 th,
@@ -240,6 +285,14 @@ th {
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
+}
+
+.component-table th {
+  cursor: pointer;
+}
+
+.component-table tbody tr {
+  cursor: zoom-in;
 }
 
 tbody tr {
@@ -297,6 +350,17 @@ tbody tr.selected {
   margin-top: 18px;
 }
 
+.list-header {
+  display: grid;
+  gap: 10px;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  gap: 8px;
+}
+
 h4 {
   margin: 0 0 10px;
 }
@@ -345,6 +409,21 @@ h4 {
   display: flex;
   justify-content: space-between;
   gap: 10px;
+}
+
+.stock-item strong span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.text-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .risk-item p,
@@ -403,6 +482,43 @@ h4 {
   display: none;
 }
 
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 20px;
+  z-index: 20;
+}
+
+.modal.open {
+  display: grid;
+}
+
+.modal-panel {
+  width: min(980px, 96vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.kline-chart {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.kline-chart svg {
+  width: 100%;
+  min-width: 720px;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -413,7 +529,7 @@ h4 {
   }
 
   nav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   nav a {

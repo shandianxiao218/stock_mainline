@@ -1,6 +1,7 @@
 const state = {
   ranking: null,
   selectedThemeId: null,
+  stockSort: { key: "amount", direction: "desc" },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -26,8 +27,9 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, report, portfolio] = await Promise.all([
+  const [ranking, matrix, report, portfolio] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
+    fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
     fetchJson(`/api/v1/portfolio/risk?date=${date}`),
   ]);
@@ -35,6 +37,7 @@ async function loadDashboard() {
   state.ranking = ranking;
   renderOverview(ranking);
   renderRanking(ranking.items);
+  renderMatrix(matrix);
   renderReport(report);
   renderPortfolio(portfolio);
   loadDataSourceStatus();
@@ -43,6 +46,27 @@ async function loadDashboard() {
   if (firstTheme) {
     await selectTheme(state.selectedThemeId || firstTheme.theme_id);
   }
+}
+
+function renderMatrix(matrix) {
+  $("matrixMeta").textContent = `${matrix.dates.length} 个交易日`;
+  $("matrixHead").innerHTML = `
+    <tr>
+      <th>主线</th>
+      ${matrix.dates.map((date) => `<th>${date.slice(5)}</th>`).join("")}
+    </tr>
+  `;
+  $("matrixBody").innerHTML = matrix.items.map((item) => `
+    <tr>
+      <td><strong>${item.theme_name}</strong></td>
+      ${matrix.dates.map((date) => {
+        const cell = item.cells[date];
+        if (!cell) return "<td class=\"empty-cell\">-</td>";
+        const level = cell.theme_score >= 68 ? "hot" : cell.theme_score >= 58 ? "warm" : "cold";
+        return `<td class="matrix-cell ${level}" title="排名 ${cell.rank} / 风险 ${cell.risk_penalty}">${cell.theme_score.toFixed(1)}</td>`;
+      }).join("")}
+    </tr>
+  `).join("");
 }
 
 async function loadDataSourceStatus() {
@@ -114,13 +138,7 @@ function renderDetail(detail) {
   $("branches").innerHTML = detail.branches.map((name) => `<span class="chip">${name}</span>`).join("");
   $("coreStocks").innerHTML = detail.core_stocks.map((name) => `<span class="chip">${name}</span>`).join("");
   $("modelExplanation").textContent = detail.model_explanation;
-  $("stockMetrics").innerHTML = (detail.stock_metrics || []).slice(0, 8).map((stock) => `
-    <div class="stock-metric">
-      <strong>${stock.name}</strong>
-      <span class="${stock.pct1 >= 0 ? "up" : "down"}">${stock.pct1.toFixed(2)}%</span>
-      <small>3日 ${stock.pct3.toFixed(2)}% / 5日 ${stock.pct5.toFixed(2)}% / 成交 ${(stock.amount / 100000000).toFixed(1)}亿</small>
-    </div>
-  `).join("") || "<p>暂无成分股表现</p>";
+  renderStockMetrics(detail.stock_metrics || []);
 
   $("riskList").innerHTML = detail.risks.map((risk) => `
     <div class="risk-item">
@@ -133,19 +151,51 @@ function renderDetail(detail) {
   `).join("") || "<p>暂无明显风险信号</p>";
 }
 
-function renderPortfolio(payload) {
-  $("portfolioSummary").textContent = `持仓高风险 ${payload.summary.portfolio_high_risk_count} / 自选高风险 ${payload.summary.watchlist_high_risk_count}`;
-  $("watchlist").innerHTML = payload.watchlist.map(renderStock).join("");
-  $("positions").innerHTML = payload.portfolio.map(renderStock).join("");
+function renderStockMetrics(stocks) {
+  const sorted = [...stocks].sort((a, b) => {
+    const key = state.stockSort.key;
+    const left = a[key];
+    const right = b[key];
+    const result = typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left ?? "").localeCompare(String(right ?? ""), "zh-CN");
+    return state.stockSort.direction === "asc" ? result : -result;
+  });
+  $("stockMetrics").innerHTML = sorted.map((stock) => `
+    <tr data-symbol="${stock.symbol}" data-name="${stock.name}">
+      <td><strong>${stock.name}</strong></td>
+      <td>${stock.symbol}</td>
+      <td>${price(stock.open)}</td>
+      <td>${price(stock.close)}</td>
+      <td>${price(stock.high)}</td>
+      <td>${price(stock.low)}</td>
+      <td class="${stock.pct1 >= 0 ? "up" : "down"}">${stock.pct1.toFixed(2)}%</td>
+      <td class="${stock.pct5 >= 0 ? "up" : "down"}">${stock.pct5.toFixed(2)}%</td>
+      <td>${formatNumber(stock.volume)}</td>
+      <td>${formatAmount(stock.amount)}</td>
+      <td>${stock.limit_break ? "是" : "否"}</td>
+      <td>${stock.hot_money || "未接入"}</td>
+    </tr>
+  `).join("");
+  document.querySelectorAll("#stockMetrics tr").forEach((row) => {
+    row.addEventListener("dblclick", () => openKline(row.dataset.symbol, row.dataset.name));
+  });
 }
 
-function renderStock(stock) {
+function renderPortfolio(payload) {
+  $("portfolioSummary").textContent = `持仓高风险 ${payload.summary.portfolio_high_risk_count} / 自选高风险 ${payload.summary.watchlist_high_risk_count}`;
+  $("watchlist").innerHTML = payload.watchlist.map((stock) => renderStock(stock, true)).join("");
+  $("positions").innerHTML = payload.portfolio.map((stock) => renderStock(stock, false)).join("");
+}
+
+function renderStock(stock, canDelete) {
   const level = stock.risk_level || "unknown";
+  const deleteButton = canDelete ? `<button class="text-btn" data-delete-watch="${stock.symbol || (stock.ts_code || "").slice(0, 6)}">删除</button>` : "";
   return `
     <div class="stock-item">
       <strong>
         <span>${stock.name}</span>
-        <span class="risk-${level}">${riskName(level)}</span>
+        <span>${deleteButton}<span class="risk-${level}">${riskName(level)}</span></span>
       </strong>
       <p>${stock.theme_name || "未匹配主线"}${stock.quantity ? ` / ${stock.quantity}股` : ""}</p>
       <p>${stock.risk_note}</p>
@@ -179,7 +229,7 @@ async function runBacktest() {
   });
   const target = $("backtestResult");
   target.style.display = "block";
-  target.textContent = JSON.stringify(result, null, 2);
+  target.textContent = formatBacktest(result);
 }
 
 async function saveReview() {
@@ -192,9 +242,126 @@ async function saveReview() {
   loadDataSourceStatus();
 }
 
+async function addWatchlist(event) {
+  event.preventDefault();
+  const symbol = $("watchSymbol").value.trim();
+  const name = $("watchName").value.trim();
+  if (!symbol) return;
+  await fetchJson("/api/v1/watchlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol, name }),
+  });
+  $("watchSymbol").value = "";
+  $("watchName").value = "";
+  loadDashboard();
+}
+
+async function deleteWatch(symbol) {
+  if (!symbol) return;
+  await fetchJson(`/api/v1/watchlist/${symbol}`, { method: "DELETE" });
+  loadDashboard();
+}
+
+async function openKline(symbol, name) {
+  const payload = await fetchJson(`/api/v1/stocks/${symbol}/kline?date=${dateValue()}&window=80`);
+  $("klineTitle").textContent = `${name} ${symbol}`;
+  $("klineChart").innerHTML = renderKlineSvg(payload.bars);
+  $("klineModal").classList.add("open");
+  $("klineModal").setAttribute("aria-hidden", "false");
+}
+
+function closeKline() {
+  $("klineModal").classList.remove("open");
+  $("klineModal").setAttribute("aria-hidden", "true");
+}
+
+function renderKlineSvg(bars) {
+  if (!bars.length) return "<p>暂无K线数据</p>";
+  const width = 920;
+  const height = 360;
+  const pad = 28;
+  const maxPrice = Math.max(...bars.map((bar) => bar.high));
+  const minPrice = Math.min(...bars.map((bar) => bar.low));
+  const priceSpan = maxPrice - minPrice || 1;
+  const step = (width - pad * 2) / bars.length;
+  const y = (price) => pad + (maxPrice - price) / priceSpan * (height - pad * 2);
+  const candles = bars.map((bar, index) => {
+    const x = pad + index * step + step / 2;
+    const color = bar.close >= bar.open ? "#c24135" : "#1b8a5a";
+    const bodyTop = Math.min(y(bar.open), y(bar.close));
+    const bodyHeight = Math.max(2, Math.abs(y(bar.open) - y(bar.close)));
+    return `
+      <line x1="${x}" y1="${y(bar.high)}" x2="${x}" y2="${y(bar.low)}" stroke="${color}" stroke-width="1" />
+      <rect x="${x - Math.max(2, step * 0.28)}" y="${bodyTop}" width="${Math.max(3, step * 0.56)}" height="${bodyHeight}" fill="${color}" />
+    `;
+  }).join("");
+  return `
+    <svg viewBox="0 0 ${width} ${height}" role="img">
+      <rect width="${width}" height="${height}" fill="#ffffff" />
+      <text x="${pad}" y="18" fill="#657383" font-size="12">${bars[0].date} 至 ${bars[bars.length - 1].date}</text>
+      <text x="${width - 120}" y="18" fill="#657383" font-size="12">${minPrice.toFixed(2)} - ${maxPrice.toFixed(2)}</text>
+      ${candles}
+    </svg>
+  `;
+}
+
+function formatBacktest(result) {
+  if (result.status !== "completed") return JSON.stringify(result, null, 2);
+  const m = result.metrics;
+  const lines = [
+    `状态：${result.status}`,
+    `样本数：${m.sample_count}`,
+    `区间：${m.start_date} 至 ${m.end_date}`,
+    `持有期：${m.holding_period}日 / Top ${m.top_n}`,
+    `平均收益：${m.avg_return}%`,
+    `平均超额：${m.avg_excess_return}%`,
+    `胜率：${(m.win_rate * 100).toFixed(1)}%`,
+    `超额胜率：${(m.excess_win_rate * 100).toFixed(1)}%`,
+    `最大回撤：${m.max_drawdown}%`,
+    `Rank IC：${m.rank_ic}`,
+    "",
+    "最近样本：",
+    ...(result.samples || []).slice(-8).map((sample) =>
+      `${sample.trade_date} -> ${sample.exit_date}，收益 ${(sample.selected_return * 100).toFixed(2)}%，超额 ${(sample.excess_return * 100).toFixed(2)}%，${sample.selected_themes.join("、")}`
+    ),
+  ];
+  return lines.join("\n");
+}
+
+function price(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function formatAmount(value) {
+  return `${(Number(value || 0) / 100000000).toFixed(2)}亿`;
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString("zh-CN");
+}
+
 $("refreshBtn").addEventListener("click", loadDashboard);
+$("dateInput").addEventListener("change", loadDashboard);
+$("periodInput").addEventListener("change", loadDashboard);
 $("backtestBtn").addEventListener("click", runBacktest);
 $("saveReviewBtn").addEventListener("click", saveReview);
+$("watchlistForm").addEventListener("submit", addWatchlist);
+$("closeKlineBtn").addEventListener("click", closeKline);
+document.querySelectorAll(".component-table th[data-sort]").forEach((th) => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.sort;
+    state.stockSort = {
+      key,
+      direction: state.stockSort.key === key && state.stockSort.direction === "desc" ? "asc" : "desc",
+    };
+    selectTheme(state.selectedThemeId);
+  });
+});
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-delete-watch]");
+  if (button) deleteWatch(button.dataset.deleteWatch);
+});
 
 loadDashboard().catch((error) => {
   $("reportText").textContent = `加载失败：${error.message}`;

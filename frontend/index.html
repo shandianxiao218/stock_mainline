@@ -19,6 +19,7 @@
         <nav>
           <a class="active" href="#overview">总览</a>
           <a href="#ranking">主线榜单</a>
+          <a href="#matrix">主线矩阵</a>
           <a href="#detail">主线详情</a>
           <a href="#portfolio">持仓风险</a>
           <a href="#report">复盘报告</a>
@@ -92,6 +93,22 @@
           </div>
         </section>
 
+        <section id="matrix" class="panel">
+          <div class="panel-title">
+            <div>
+              <p class="eyebrow">Matrix</p>
+              <h3>近20日主线矩阵</h3>
+            </div>
+            <span id="matrixMeta"></span>
+          </div>
+          <div class="matrix-wrap">
+            <table class="matrix-table">
+              <thead id="matrixHead"></thead>
+              <tbody id="matrixBody"></tbody>
+            </table>
+          </div>
+        </section>
+
         <section id="detail" class="detail-grid">
           <article class="panel">
             <div class="panel-title">
@@ -115,7 +132,27 @@
             <p id="modelExplanation" class="explain"></p>
             <div class="stock-performance">
               <h4>成分股表现</h4>
-              <div id="stockMetrics" class="stock-metrics"></div>
+              <div class="table-wrap">
+                <table class="component-table">
+                  <thead>
+                    <tr>
+                      <th data-sort="name">名称</th>
+                      <th data-sort="symbol">代码</th>
+                      <th data-sort="open">开</th>
+                      <th data-sort="close">收</th>
+                      <th data-sort="high">高</th>
+                      <th data-sort="low">低</th>
+                      <th data-sort="pct1">涨幅</th>
+                      <th data-sort="pct5">近5日</th>
+                      <th data-sort="volume">成交量</th>
+                      <th data-sort="amount">成交额</th>
+                      <th data-sort="limit_break">炸板</th>
+                      <th data-sort="hot_money">游资参与</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stockMetrics"></tbody>
+                </table>
+              </div>
             </div>
           </article>
 
@@ -140,7 +177,14 @@
           </div>
           <div class="portfolio-grid">
             <div>
-              <h4>自选股</h4>
+              <div class="list-header">
+                <h4>自选股</h4>
+                <form id="watchlistForm" class="inline-form">
+                  <input id="watchSymbol" type="text" placeholder="代码" maxlength="6">
+                  <input id="watchName" type="text" placeholder="名称">
+                  <button type="submit" class="secondary">添加</button>
+                </form>
+              </div>
               <div id="watchlist" class="stock-list"></div>
             </div>
             <div>
@@ -165,6 +209,19 @@
           <pre id="backtestResult" class="backtest-result"></pre>
         </section>
       </main>
+    </div>
+
+    <div id="klineModal" class="modal" aria-hidden="true">
+      <div class="modal-panel">
+        <div class="panel-title">
+          <div>
+            <p class="eyebrow">K Line</p>
+            <h3 id="klineTitle">K线</h3>
+          </div>
+          <button id="closeKlineBtn" type="button" class="secondary">关闭</button>
+        </div>
+        <div id="klineChart" class="kline-chart"></div>
+      </div>
     </div>
 
     <script src="/app.js"></script>
