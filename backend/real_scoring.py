@@ -606,6 +606,41 @@ def theme_matrix_payload(date: str, days: int = 20) -> dict[str, Any]:
     return {"date": dates[-1] if dates else date, "dates": dates, "items": rows_out}
 
 
+def confidence_history_payload(date: str, days: int = 20) -> dict[str, Any]:
+    days = max(1, min(days, 60))
+    with sqlite3.connect(DB_PATH) as conn:
+        trade_date = resolve_trade_date(conn, date)
+        rows = conn.execute(
+            """
+            select distinct trade_date
+            from em_daily_quote
+            where trade_date <= ?
+            order by trade_date desc
+            limit ?
+            """,
+            (trade_date, days),
+        ).fetchall()
+    dates = [date_text(row[0]) for row in reversed(rows)]
+    items = []
+    for day in dates:
+        themes, market = build_themes_for_date(day)
+        conf = confidence(themes, market)
+        items.append({
+            "date": day,
+            "confidence": conf["confidence"],
+            "confidence_score": conf["confidence_score"],
+            "components": conf["components"],
+            "reason": conf["reason"],
+            "top_theme": themes[0]["theme_name"] if themes else None,
+            "top_theme_score": themes[0]["theme_score"] if themes else None,
+        })
+    return {
+        "date": dates[-1] if dates else date,
+        "days": len(dates),
+        "items": items,
+    }
+
+
 def kline_payload(symbol: str, date: str, window: int = 80) -> dict[str, Any]:
     window = max(10, min(window, 240))
     with sqlite3.connect(DB_PATH) as conn:

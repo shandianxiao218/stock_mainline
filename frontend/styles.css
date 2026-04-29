@@ -178,6 +178,33 @@ button.secondary,
   gap: 12px;
 }
 
+.confidence-components {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.confidence-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.confidence-card span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.confidence-card strong {
+  font-size: 22px;
+}
+
+.compact-history {
+  margin-top: 14px;
+}
+
 .config-form {
   display: grid;
   grid-template-columns: 1.1fr 1.1fr repeat(3, minmax(120px, 0.8fr)) auto;
@@ -632,6 +659,7 @@ h4 {
 
   .metric-grid,
   .quality-grid,
+  .confidence-components,
   .config-form,
   .config-row,
   .detail-grid,

@@ -28,7 +28,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -36,6 +36,7 @@ async function loadDashboard() {
     fetchJson("/api/v1/data/quality"),
     fetchJson("/api/v1/model/config"),
     fetchJson(`/api/v1/factors/effectiveness?date=${date}&holding_period=3`),
+    fetchJson(`/api/v1/confidence/history?date=${date}&days=20`),
   ]);
 
   state.ranking = ranking;
@@ -48,6 +49,7 @@ async function loadDashboard() {
   renderQuality(quality);
   renderModelConfig(modelConfig);
   renderFactors(factors);
+  renderConfidenceHistory(ranking, confidenceHistory);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -116,6 +118,40 @@ function renderOverview(ranking) {
   $("riskCount").textContent = `${highRisk.length} 条`;
   $("riskSummary").textContent = highRisk.map((item) => item.theme_name).join("、") || "暂无高风险主线";
   $("rankingMeta").textContent = `${ranking.date} / ${ranking.period} / ${ranking.items.length} 条主线`;
+}
+
+function renderConfidenceHistory(ranking, history) {
+  const components = ranking.components || {};
+  const names = {
+    liquidity: "流动性",
+    theme_spread: "主线分差",
+    risk_stability: "风险稳定",
+    market_breadth: "市场广度",
+    theme_consistency: "主线一致性",
+  };
+  $("confidenceMeta").textContent = `${history.days || 0} 日历史`;
+  $("confidenceComponents").innerHTML = Object.entries(names).map(([key, label]) => `
+    <div class="confidence-card">
+      <span>${label}</span>
+      <strong>${Number(components[key] || 0).toFixed(1)}</strong>
+    </div>
+  `).join("");
+  $("confidenceHistoryBody").innerHTML = (history.items || []).map((item) => {
+    const c = item.components || {};
+    return `
+      <tr>
+        <td>${item.date}</td>
+        <td>${levelName(item.confidence)}</td>
+        <td>${item.confidence_score}</td>
+        <td>${Number(c.liquidity || 0).toFixed(1)}</td>
+        <td>${Number(c.theme_spread || 0).toFixed(1)}</td>
+        <td>${Number(c.risk_stability || 0).toFixed(1)}</td>
+        <td>${Number(c.market_breadth || 0).toFixed(1)}</td>
+        <td>${Number(c.theme_consistency || 0).toFixed(1)}</td>
+        <td>${item.top_theme || "-"}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderModelConfig(payload) {

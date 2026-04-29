@@ -25,6 +25,7 @@ from theme_universe import PORTFOLIO
 try:
     from real_scoring import (
         backtest_result,
+        confidence_history_payload,
         daily_report,
         db_ready,
         detail_payload,
@@ -48,6 +49,9 @@ except ImportError:
 
     def factor_effectiveness_payload(date: str, holding_period: int = 3) -> dict[str, object]:
         return {"date": date, "holding_period": holding_period, "status": "unavailable", "items": []}
+
+    def confidence_history_payload(date: str, days: int = 20) -> dict[str, object]:
+        return {"date": date, "days": 0, "items": []}
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -101,6 +105,10 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/themes/matrix":
             days = int(query.get("days", ["20"])[0])
             return self.send_json(theme_matrix_payload(date, days))
+
+        if path == "/api/v1/confidence/history":
+            days = int(query.get("days", ["20"])[0])
+            return self.send_json(confidence_history_payload(date, days))
 
         if path.startswith("/api/v1/stocks/") and path.endswith("/kline"):
             symbol = unquote(path.split("/")[4])
