@@ -160,3 +160,11 @@ python backend/server.py
 ```text
 http://127.0.0.1:8000
 ```
+
+## 本地测试
+
+```powershell
+python backend/test_scoring.py
+```
+
+该烟测依赖 `backend/data/radar.db`，覆盖榜单评分、风险上限、置信度组件、主线矩阵和因子有效性。
