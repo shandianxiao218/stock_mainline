@@ -16,6 +16,7 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
+from data_quality import data_quality_payload
 from review_store import save_daily_review
 from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
 from theme_universe import PORTFOLIO
@@ -81,6 +82,9 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/data/eastmoney/status":
             return self.send_json(eastmoney_status())
+
+        if path == "/api/v1/data/quality":
+            return self.send_json(data_quality_payload())
 
         if path == "/api/v1/themes/matrix":
             days = int(query.get("days", ["20"])[0])

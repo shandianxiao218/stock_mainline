@@ -27,11 +27,12 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
     fetchJson(`/api/v1/portfolio/risk?date=${date}`),
+    fetchJson("/api/v1/data/quality"),
   ]);
 
   state.ranking = ranking;
@@ -40,12 +41,30 @@ async function loadDashboard() {
   renderMatrix(matrix);
   renderReport(report);
   renderPortfolio(portfolio);
+  renderQuality(quality);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
   if (firstTheme) {
     await selectTheme(state.selectedThemeId || firstTheme.theme_id);
   }
+}
+
+function renderQuality(quality) {
+  $("qualityMeta").textContent = quality.status === "ok" ? "正常" : `${quality.warn_count} 项需关注`;
+  const dateHealth = quality.date_health || {};
+  const dateCard = `
+    <div class="quality-card">
+      <strong>交易日覆盖</strong>
+      <p>${dateHealth.trade_day_count || 0} 日 / ${dateHealth.min_trade_date || "-"} - ${dateHealth.max_trade_date || "-"}</p>
+    </div>
+  `;
+  $("qualityChecks").innerHTML = dateCard + quality.checks.map((check) => `
+    <div class="quality-card ${check.status}">
+      <strong>${check.name}</strong>
+      <p>${check.detail}</p>
+    </div>
+  `).join("");
 }
 
 function renderMatrix(matrix) {
