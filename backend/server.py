@@ -17,13 +17,30 @@ sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
 from review_store import save_daily_review
+from watchlist_store import add_watchlist, delete_watchlist, list_watchlist
 
 try:
-    from real_scoring import backtest_result, daily_report, db_ready, detail_payload, find_theme, portfolio_risk, ranking_payload
+    from real_scoring import (
+        backtest_result,
+        daily_report,
+        db_ready,
+        detail_payload,
+        find_theme,
+        kline_payload,
+        portfolio_risk,
+        ranking_payload,
+        theme_matrix_payload,
+    )
     if not db_ready():
         raise ImportError("本地 SQLite 数据库不存在")
 except ImportError:
     from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload
+
+    def theme_matrix_payload(date: str, days: int = 20) -> dict[str, object]:
+        return {"date": date, "dates": [], "items": []}
+
+    def kline_payload(symbol: str, date: str, window: int = 80) -> dict[str, object]:
+        return {"symbol": symbol, "bars": []}
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -64,6 +81,18 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/data/eastmoney/status":
             return self.send_json(eastmoney_status())
 
+        if path == "/api/v1/themes/matrix":
+            days = int(query.get("days", ["20"])[0])
+            return self.send_json(theme_matrix_payload(date, days))
+
+        if path.startswith("/api/v1/stocks/") and path.endswith("/kline"):
+            symbol = unquote(path.split("/")[4])
+            window = int(query.get("window", ["80"])[0])
+            return self.send_json(kline_payload(symbol, date, window))
+
+        if path == "/api/v1/watchlist":
+            return self.send_json({"items": list_watchlist()})
+
         if path == "/api/v1/export/themes.xlsx":
             return self.send_excel(date)
 
@@ -83,6 +112,21 @@ class RadarHandler(BaseHTTPRequestHandler):
             return self.send_json(backtest_result(body))
         if parsed.path == "/api/v1/reviews/save":
             return self.send_json(save_daily_review(date))
+        if parsed.path == "/api/v1/watchlist":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                return self.send_json(add_watchlist(str(body.get("symbol", "")), body.get("name"), body.get("tag")))
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
+        return self.send_error_json(404, "Not found")
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/v1/watchlist/"):
+            symbol = unquote(parsed.path.split("/")[4])
+            return self.send_json(delete_watchlist(symbol))
         return self.send_error_json(404, "Not found")
 
     def send_static(self, path: str) -> None:

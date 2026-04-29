@@ -10,6 +10,11 @@ from typing import Any
 
 from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
 
+try:
+    from watchlist_store import list_watchlist
+except ImportError:
+    list_watchlist = None
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT_DIR / "backend" / "data" / "radar.db"
@@ -140,15 +145,20 @@ def stock_metrics(symbol: str, history: list[dict[str, Any]]) -> dict[str, Any] 
     amount_ratio = latest["amount"] / safe_mean(prev_amounts, latest["amount"]) if prev_amounts else 1
     pos = (latest["close"] - latest["low"]) / (latest["high"] - latest["low"]) if latest["high"] > latest["low"] else 0.5
     limit_up = pct1 >= limit_threshold(symbol)
+    touched_limit = latest["high"] / prev["close"] - 1 >= limit_threshold(symbol) if prev["close"] else False
+    limit_break = touched_limit and not limit_up
     drawdown = latest["close"] / max(row["close"] for row in history[-10:]) - 1 if history[-10:] else 0
     return {
         **latest,
+        "prev_close": prev["close"],
         "pct1": pct1,
         "pct3": pct3,
         "pct5": pct5,
         "amount_ratio": amount_ratio,
         "close_position": pos,
         "limit_up": limit_up,
+        "touched_limit": touched_limit,
+        "limit_break": limit_break,
         "drawdown_10": drawdown,
     }
 
@@ -281,9 +291,15 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
                 "pct1": round(item["pct1"] * 100, 2),
                 "pct3": round(item["pct3"] * 100, 2),
                 "pct5": round(item["pct5"] * 100, 2),
-                "amount": round(item["amount"], 2),
+                "open": item["open"],
+                "high": item["high"],
+                "low": item["low"],
                 "close": item["close"],
+                "volume": item["volume"],
+                "amount": round(item["amount"], 2),
                 "limit_up": item["limit_up"],
+                "limit_break": item["limit_break"],
+                "hot_money": "未接入",
             }
             for item in sorted(metrics, key=lambda row: row["amount"], reverse=True)
         ],
@@ -453,7 +469,7 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
             "catalysts": sorted({c for item in cluster for c in item.raw.get("catalysts", [])}),
             "next_checks": build_next_checks(cluster),
             "factor_contribution": factor_contribution(cluster),
-            "stock_metrics": sorted(stock_metrics, key=lambda row: row["amount"], reverse=True)[:12],
+            "stock_metrics": sorted(stock_metrics, key=lambda row: row["amount"], reverse=True),
         })
     themes.sort(key=lambda item: item["theme_score"], reverse=True)
     for rank, theme in enumerate(themes, start=1):
@@ -505,6 +521,78 @@ def ranking_payload(date: str, period: str = "short") -> dict[str, Any]:
     themes, market = build_themes_for_date(date)
     conf = confidence(themes, market)
     return {"date": market["date"], "requested_date": date, "period": period, "market": market, **conf, "items": themes}
+
+
+def theme_matrix_payload(date: str, days: int = 20) -> dict[str, Any]:
+    days = max(1, min(days, 60))
+    with sqlite3.connect(DB_PATH) as conn:
+        trade_date = resolve_trade_date(conn, date)
+        rows = conn.execute(
+            """
+            select distinct trade_date
+            from em_daily_quote
+            where trade_date <= ?
+            order by trade_date desc
+            limit ?
+            """,
+            (trade_date, days),
+        ).fetchall()
+    dates = [date_text(row[0]) for row in reversed(rows)]
+    matrix: dict[str, dict[str, Any]] = {}
+    for day in dates:
+        themes, _market = build_themes_for_date(day)
+        for theme in themes:
+            item = matrix.setdefault(
+                theme["theme_id"],
+                {
+                    "theme_id": theme["theme_id"],
+                    "theme_name": theme["theme_name"],
+                    "cells": {},
+                },
+            )
+            item["cells"][day] = {
+                "rank": theme["rank"],
+                "theme_score": theme["theme_score"],
+                "heat_score": theme["heat_score"],
+                "continuation_score": theme["continuation_score"],
+                "risk_penalty": theme["risk_penalty"],
+                "status": theme["status"],
+            }
+    rows_out = sorted(
+        matrix.values(),
+        key=lambda row: row["cells"].get(dates[-1], {}).get("theme_score", -999),
+        reverse=True,
+    )
+    return {"date": dates[-1] if dates else date, "dates": dates, "items": rows_out}
+
+
+def kline_payload(symbol: str, date: str, window: int = 80) -> dict[str, Any]:
+    window = max(10, min(window, 240))
+    with sqlite3.connect(DB_PATH) as conn:
+        trade_date = resolve_trade_date(conn, date)
+        rows = conn.execute(
+            """
+            select trade_date, open, high, low, close, volume, amount
+            from em_daily_quote
+            where symbol = ? and trade_date <= ?
+            order by trade_date desc
+            limit ?
+            """,
+            (symbol, trade_date, window),
+        ).fetchall()
+    bars = [
+        {
+            "date": date_text(row[0]),
+            "open": row[1],
+            "high": row[2],
+            "low": row[3],
+            "close": row[4],
+            "volume": row[5],
+            "amount": row[6],
+        }
+        for row in reversed(rows)
+    ]
+    return {"symbol": symbol, "bars": bars}
 
 
 def find_theme(theme_id: str, date: str = "2026-04-29") -> dict[str, Any] | None:
@@ -582,7 +670,8 @@ def portfolio_risk(date: str) -> dict[str, Any]:
             "risk_note": f"暴露于{theme['status']}，风险扣分{theme['risk_penalty']}",
         }
 
-    enriched_watchlist = [enrich(row) for row in WATCHLIST]
+    source_watchlist = list_watchlist() if list_watchlist else WATCHLIST
+    enriched_watchlist = [enrich(row) for row in source_watchlist]
     enriched_portfolio = [enrich(row) for row in PORTFOLIO]
     return {
         "date": date,
