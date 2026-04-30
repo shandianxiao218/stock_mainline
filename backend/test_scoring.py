@@ -69,6 +69,14 @@ class RealScoringSmokeTest(unittest.TestCase):
         short_emotion = next(row for row in detail["factor_contribution"]["heat"] if row["name"] == "涨停与短线情绪")
         self.assertLess(short_emotion["score"], 10)
 
+    def test_default_theme_components_use_eastmoney_real_sectors(self) -> None:
+        payload = ranking_payload("2026-04-29", "short")
+        medicine = next(item for item in payload["items"] if item["theme_name"] == "医药复苏")
+        detail = detail_payload(medicine["theme_id"], "2026-04-29")
+        self.assertGreater(len(detail["stock_metrics"]), 100)
+        sources = {sector["stats"]["universe_source"] for sector in detail["sectors"]}
+        self.assertEqual(sources, {"eastmoney_auto"})
+
     def test_risk_types_within_srs_range(self) -> None:
         """验证所有风险扣分项均在合理范围内。
 

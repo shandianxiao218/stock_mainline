@@ -28,7 +28,7 @@
 - 东方财富 C 导出的 `stocks.csv` 与 `daily_quotes.csv` 已可通过 `backend/load_eastmoney_csv.py` 装载进本地 SQLite：`backend/data/radar.db`。
 - 当前已验证入库数据：股票 5523 条，日线 100813 条，日期范围 20260401 至 20260429。
 - 主线榜单已切换为真实日线驱动：行情、涨跌幅、成交、广度、涨停近似和风险扣分来自 SQLite。
-- 当前板块/主题成分使用 `backend/theme_universe.py` 的可维护配置，后续再替换为东方财富板块成分解析。
+- 当前板块/主题成分已改用内置“主线 -> 东方财富真实板块代码”白名单，成分来自 `em_sector_constituent_history`；`backend/theme_universe.py` 仅作为无真实板块数据时的兜底。
 - 自动聚合使用分支/类别提示、核心股重叠和关键词相似度。
 - 舆情分数在样例数据中模拟，后续确定供应商或采集源后替换。
 - 回测接口已按 SQLite 可用交易日真实逐日重放；若导入 5 年日线，接口会按可用历史扩大样本。
@@ -46,7 +46,7 @@
 - `backend/test_scoring.py` 提供本地 unittest 烟测，覆盖榜单分数、风险上限、置信度组件、主线矩阵和因子有效性。
 - 东方财富 C 导入器已解析 `swc8\data\hs_bk_crc_data_new.dat`，生成 `sector_constituents.csv`；SQLite 已有 `em_sector` 和 `em_sector_constituent_history`，当前验证为 1012 个板块、85640 条成分关系。
 - Web 已支持东方财富真实板块浏览，接口为 `/api/v1/sectors` 和 `/api/v1/sectors/{sector_code}/constituents`。
-- 2026-04-30 已修复一次 GLM 引入的性能回归：无 `local_theme` 映射时不能把 1000+ 个东方财富板块全部送入评分。当前策略是返回空列表并回退到 `theme_universe.py` 控制集合，真实板块进入评分前必须先做主线映射或候选裁剪。
+- 2026-04-30 已修复一次 GLM 引入的性能回归：无 `local_theme` 映射时不能把 1000+ 个东方财富板块全部送入评分。当前策略是使用内置主线-东方财富板块白名单，真实成分进入评分但不全量扫描。
 - 2026-04-30 已修正评分解释性问题：因子分统一限制在 0-100，无涨停时短线情绪不再给固定底分，`theme_universe.py` 小样本成分触发“样本覆盖不足”风险；详情页展示每项因子的得分、权重、加权贡献和计算依据。
 
 ## 当前数据边界
@@ -60,4 +60,4 @@
 - `local_model_config` 用于保存本地模型参数版本，当前只管理主公式权重和风险扣分上限。
 - `local_audit_log` 用于保存本地审计日志。
 - `local_catalyst_event` 用于保存人工催化事件和催化等级。
-- `em_sector`、`em_sector_constituent_history` 用于保存东方财富板块和成分关系；当前评分仍未切换到这些真实板块成分。
+- `em_sector`、`em_sector_constituent_history` 用于保存东方财富板块和成分关系；当前评分默认使用内置白名单映射到这些真实板块成分。

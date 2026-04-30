@@ -41,6 +41,7 @@ from theme_universe import PORTFOLIO
 try:
     from real_scoring import (
         backtest_result,
+        clear_scoring_cache,
         confidence_history_payload,
         daily_report,
         db_ready,
@@ -57,6 +58,9 @@ try:
         raise ImportError("本地 SQLite 数据库不存在")
 except ImportError:
     from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload
+
+    def clear_scoring_cache() -> None:
+        return None
 
     def theme_matrix_payload(date: str, days: int = 20) -> dict[str, object]:
         return {"date": date, "dates": [], "items": []}
@@ -286,6 +290,7 @@ class RadarHandler(BaseHTTPRequestHandler):
             try:
                 body = json.loads(raw)
                 result = save_config(body)
+                clear_scoring_cache()
                 write_audit("model_config_save", method="POST", path=parsed.path, target=result.get("config_version"), detail=result)
                 return self.send_json(result)
             except (json.JSONDecodeError, ValueError) as exc:

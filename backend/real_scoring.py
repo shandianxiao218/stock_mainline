@@ -4,6 +4,7 @@ import math
 import sqlite3
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from statistics import mean, median
 from typing import Any
@@ -43,6 +44,92 @@ CONTINUATION_WEIGHTS = {
     "舆情边际变化": 4,
     "容量与中军承接": 2,
 }
+
+REAL_THEME_SECTOR_MAP = [
+    {
+        "theme_name": "AI硬件/算力基础设施",
+        "category": "ai_compute",
+        "sectors": [
+            ("90.BK1128", "CPO/光模块"),
+            ("90.BK1134", "算力概念"),
+            ("90.BK0877", "PCB"),
+            ("90.BK1138", "液冷概念"),
+            ("90.BK1168", "铜缆高速连接"),
+        ],
+    },
+    {
+        "theme_name": "资源涨价",
+        "category": "resource_price",
+        "sectors": [
+            ("90.BK0578", "稀土永磁"),
+            ("90.BK0695", "小金属概念"),
+            ("90.BK1173", "锂矿概念"),
+            ("90.BK0478", "有色金属"),
+            ("90.BK1287", "工业金属"),
+            ("90.BK1615", "铜"),
+            ("90.BK1613", "铝"),
+            ("90.BK1010", "磷化工"),
+            ("90.BK1649", "油气资源"),
+        ],
+    },
+    {
+        "theme_name": "新能源反弹",
+        "category": "new_energy_rebound",
+        "sectors": [
+            ("90.BK0900", "新能源车"),
+            ("90.BK0574", "锂电池概念"),
+            ("90.BK0588", "光伏概念"),
+            ("90.BK0989", "储能概念"),
+            ("90.BK0968", "固态电池"),
+            ("90.BK1031", "光伏设备"),
+        ],
+    },
+    {
+        "theme_name": "AI应用",
+        "category": "ai_application",
+        "sectors": [
+            ("90.BK0809", "AI智能体"),
+            ("90.BK1111", "AIGC概念"),
+            ("90.BK1153", "多模态AI"),
+            ("90.BK0486", "传媒"),
+            ("90.BK0509", "网络游戏"),
+            ("90.BK1151", "短剧互动游戏"),
+            ("90.BK0662", "在线教育"),
+        ],
+    },
+    {
+        "theme_name": "低空经济",
+        "category": "low_altitude",
+        "sectors": [
+            ("90.BK1166", "低空经济"),
+            ("90.BK1157", "飞行汽车(eVTOL)"),
+            ("90.BK0704", "无人机"),
+        ],
+    },
+    {
+        "theme_name": "防御红利",
+        "category": "defensive_yield",
+        "sectors": [
+            ("90.BK0428", "电力"),
+            ("90.BK0427", "公用事业"),
+            ("90.BK1283", "银行"),
+            ("90.BK1024", "绿色电力"),
+            ("90.BK0437", "煤炭"),
+        ],
+    },
+    {
+        "theme_name": "医药复苏",
+        "category": "medicine_recovery",
+        "sectors": [
+            ("90.BK1216", "医药生物"),
+            ("90.BK1106", "创新药"),
+            ("90.BK1600", "医疗研发外包"),
+            ("90.BK0727", "医疗服务"),
+            ("90.BK1041", "医疗器械"),
+            ("90.BK0465", "化学制药"),
+        ],
+    },
+]
 
 # 无真实舆情数据时需要排除的因子
 _SENTIMENT_FACTORS = {"舆情边际变化率", "舆情绝对热度", "舆情边际变化"}
@@ -446,6 +533,11 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     continuation = weighted_score(continuation_factors, cont_w)
     risk = min(float(config["risk_cap"]), sum(risks.values()))
     composite = round(config["heat_weight"] * heat + config["continuation_weight"] * continuation - risk, 2)
+    source_notes = {
+        "theme_universe": "当前为本地配置样例成分，不是完整东方财富板块",
+        "eastmoney_mapping": "来自本地主线-东方财富板块映射",
+        "eastmoney_auto": "来自内置主线-东方财富真实板块自动映射",
+    }
     raw = {
         **sector,
         "core_stocks": [name for _code, name in sector["stocks"]],
@@ -480,7 +572,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
             "stock_count": len(metrics),
             "configured_stock_count": len(sector["stocks"]),
             "universe_source": sector.get("universe_source", "eastmoney_mapping"),
-            "universe_note": "当前为本地配置样例成分，不是完整东方财富板块" if sector.get("universe_source") == "theme_universe" else "来自本地主线-东方财富板块映射",
+            "universe_note": source_notes.get(sector.get("universe_source"), "来自东方财富真实板块"),
             "avg_pct": round(avg_pct * 100, 2),
             "median_pct": round(median_pct * 100, 2),
             "avg_pct3": round(avg_pct3 * 100, 2),
@@ -751,10 +843,10 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """从 SQLite 加载东方财富真实板块成分，格式与 THEME_SECTORS 兼容。
 
     优先使用 local_theme + local_theme_sector_mapping 定义的主线-板块映射；
-    若无映射，则返回空列表并由调用方回退到可控的 THEME_SECTORS。
+    若无映射，则使用内置主线到东方财富板块代码的受控映射。
 
-    不能在无映射时直接把 em_sector 的 1000+ 个板块全部送入评分引擎：
-    近 20 日矩阵、置信度历史和因子有效性都会重复逐日评分，导致页面基础加载超时。
+    不能在无映射时直接把 em_sector 的 1000+ 个板块全部送入评分引擎。
+    默认映射只选取每条主线相关的真实东方财富板块，避免近 20 日矩阵和回测超时。
     """
     # 检查是否有主线映射
     theme_rows = conn.execute(
@@ -793,6 +885,7 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                         "sector_name": sector_name,
                         "branch": branch or sector_name,
                         "category": category,
+                        "theme_name": theme_name,
                         "keywords": [theme_name, sector_name],
                         "stocks": [(r[0], r[1]) for r in stocks],
                         "catalysts": [],
@@ -800,9 +893,49 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                     })
         return sectors
 
-    return []
+    return load_default_real_theme_sectors(conn)
 
 
+def load_default_real_theme_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    sectors: list[dict[str, Any]] = []
+    for theme in REAL_THEME_SECTOR_MAP:
+        for sector_code, branch in theme["sectors"]:
+            row = conn.execute(
+                "select sector_name, source from em_sector where sector_code = ?",
+                (sector_code,),
+            ).fetchone()
+            if not row:
+                continue
+            sector_name, source = row
+            stocks = conn.execute(
+                """
+                select c.symbol, coalesce(s.name, c.symbol)
+                from em_sector_constituent_history c
+                left join em_stock s on s.symbol = c.symbol
+                where c.sector_code = ?
+                group by c.symbol
+                order by c.symbol
+                """,
+                (sector_code,),
+            ).fetchall()
+            if not stocks:
+                continue
+            sectors.append({
+                "sector_id": sector_code,
+                "sector_name": sector_name,
+                "branch": branch or sector_name,
+                "category": theme["category"],
+                "theme_name": theme["theme_name"],
+                "keywords": [theme["theme_name"], sector_name, branch],
+                "stocks": [(r[0], r[1]) for r in stocks],
+                "catalysts": [],
+                "universe_source": "eastmoney_auto",
+                "source": source,
+            })
+    return sectors
+
+
+@lru_cache(maxsize=256)
 def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     with sqlite3.connect(DB_PATH) as conn:
         trade_date = resolve_trade_date(conn, date)
@@ -829,17 +962,19 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
         risk = round(min(float(config["risk_cap"]), avg("risk_penalty")), 2)
         theme_score = round(config["heat_weight"] * heat + config["continuation_weight"] * continuation - risk, 2)
         branches = [item.raw["branch"] for item in cluster]
-        core_stocks = []
-        stock_metrics = []
+        stock_metrics_by_symbol: dict[str, dict[str, Any]] = {}
         for item in cluster:
-            stock_metrics.extend(item.raw.get("stock_metrics", []))
-            for stock in item.raw["core_stocks"]:
-                if stock not in core_stocks:
-                    core_stocks.append(stock)
+            for stock in item.raw.get("stock_metrics", []):
+                existing = stock_metrics_by_symbol.get(stock["symbol"])
+                if not existing or float(stock.get("amount", 0)) > float(existing.get("amount", 0)):
+                    stock_metrics_by_symbol[stock["symbol"]] = stock
+        stock_metrics = sorted(stock_metrics_by_symbol.values(), key=lambda row: row["amount"], reverse=True)
+        core_stocks = [stock["name"] for stock in stock_metrics[:10]]
+        theme_name = cluster[0].raw.get("theme_name") or CATEGORY_LABELS.get(category, cluster[0].raw["sector_name"])
 
         themes.append({
             "theme_id": f"theme_{category}_{idx}",
-            "theme_name": CATEGORY_LABELS.get(category, cluster[0].raw["sector_name"]),
+            "theme_name": theme_name,
             "theme_score": theme_score,
             "heat_score": heat,
             "continuation_score": continuation,
@@ -866,12 +1001,16 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
             "catalysts": sorted({c for item in cluster for c in item.raw.get("catalysts", [])}),
             "next_checks": build_next_checks(cluster),
             "factor_contribution": factor_contribution(cluster),
-            "stock_metrics": sorted(stock_metrics, key=lambda row: row["amount"], reverse=True),
+            "stock_metrics": stock_metrics,
         })
     themes.sort(key=lambda item: item["theme_score"], reverse=True)
     for rank, theme in enumerate(themes, start=1):
         theme["rank"] = rank
     return themes, market
+
+
+def clear_scoring_cache() -> None:
+    build_themes_for_date.cache_clear()
 
 
 def build_next_checks(cluster: list[SectorScore]) -> list[str]:
