@@ -5,6 +5,7 @@ const state = {
   selectedThemeId: null,
   selectedSectorCode: null,
   stockSort: { key: "amount", direction: "desc" },
+  rankingFilter: { confidence: "all", status: "all", riskLevel: "all" },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -188,6 +189,27 @@ function renderOverview(ranking) {
   const highRisk = ranking.items.filter((item) => item.risk_penalty >= 8);
   $("riskCount").textContent = `${highRisk.length} 条`;
   $("riskSummary").textContent = highRisk.map((item) => item.theme_name).join("、") || "暂无高风险主线";
+
+  // 退潮主线：风险扣分>=8 或 状态含"退潮"
+  const declining = ranking.items.filter(
+    (item) => item.risk_penalty >= 8 || item.status.includes("退潮")
+  );
+  const decliningEl = $("decliningThemes");
+  if (decliningEl) {
+    decliningEl.textContent = declining.map((item) => `${item.theme_name}(-${item.risk_penalty})`).join("、") || "暂无退潮主线";
+  }
+
+  // 关键验证点：取排名前 3 主线的 next_checks
+  const checks = ranking.items.slice(0, 3).flatMap((item) =>
+    (item.next_checks || []).map((check) => `[${item.theme_name}] ${check}`)
+  );
+  const checksEl = $("keyChecks");
+  if (checksEl) {
+    checksEl.innerHTML = checks.length
+      ? checks.map((c) => `<li>${c}</li>`).join("")
+      : "<li>暂无</li>";
+  }
+
   $("rankingMeta").textContent = `${ranking.date} / ${ranking.period} / ${ranking.items.length} 条主线`;
 }
 
@@ -272,8 +294,26 @@ function renderFactors(payload) {
   `).join("");
 }
 
+function getFilteredItems() {
+  const items = (state.ranking && state.ranking.items) || [];
+  const filter = state.rankingFilter;
+  return items.filter((item) => {
+    if (filter.confidence !== "all") {
+      const conf = item.confidence || "";
+      if (filter.confidence === "high" && conf !== "high") return false;
+      if (filter.confidence === "medium" && conf !== "medium" && conf !== "medium_high" && conf !== "medium_low") return false;
+      if (filter.confidence === "low" && conf !== "low") return false;
+    }
+    if (filter.status !== "all" && !item.status.includes(filter.status)) return false;
+    if (filter.riskLevel === "high" && item.risk_penalty < 8) return false;
+    if (filter.riskLevel === "medium" && item.risk_penalty < 4) return false;
+    return true;
+  });
+}
+
 function renderRanking(items) {
-  $("rankingBody").innerHTML = items.map((item) => `
+  const filtered = getFilteredItems();
+  $("rankingBody").innerHTML = filtered.map((item) => `
     <tr data-theme-id="${item.theme_id}" class="${item.theme_id === state.selectedThemeId ? "selected" : ""}">
       <td>${item.rank}</td>
       <td><strong>${item.theme_name}</strong></td>
@@ -692,4 +732,17 @@ document.addEventListener("click", (event) => {
 
 loadDashboard().catch((error) => {
   $("reportText").textContent = `加载失败：${error.message}`;
+});
+
+// 榜单筛选器
+["filterConfidence", "filterStatus", "filterRisk"].forEach((id) => {
+  const el = $(id);
+  if (el) {
+    el.addEventListener("change", () => {
+      state.rankingFilter.confidence = $("filterConfidence") ? $("filterConfidence").value : "all";
+      state.rankingFilter.status = $("filterStatus") ? $("filterStatus").value : "all";
+      state.rankingFilter.riskLevel = $("filterRisk") ? $("filterRisk").value : "all";
+      renderRanking(state.ranking ? state.ranking.items : []);
+    });
+  }
 });

@@ -71,6 +71,18 @@
             <strong id="riskCount">-</strong>
             <p id="riskSummary">-</p>
           </article>
+          <article class="metric">
+            <span>退潮主线</span>
+            <strong>-</strong>
+            <p id="decliningThemes">-</p>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">
+            <h3>今日关键验证点</h3>
+          </div>
+          <ul id="keyChecks" style="margin:0;padding:0 1.2rem;list-style:disc;"></ul>
         </section>
 
         <section class="panel">
@@ -109,6 +121,33 @@
               <h3>主线榜单</h3>
             </div>
             <span id="rankingMeta"></span>
+          </div>
+          <div class="filter-bar" style="display:flex;gap:8px;padding:4px 8px;flex-wrap:wrap;align-items:center;">
+            <label style="font-size:12px;">置信度
+              <select id="filterConfidence" style="font-size:12px;">
+                <option value="all">全部</option>
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label style="font-size:12px;">状态
+              <select id="filterStatus" style="font-size:12px;">
+                <option value="all">全部</option>
+                <option value="延续">延续</option>
+                <option value="新晋">新晋</option>
+                <option value="退潮">退潮</option>
+                <option value="分歧">分歧</option>
+                <option value="活跃">活跃</option>
+              </select>
+            </label>
+            <label style="font-size:12px;">风险
+              <select id="filterRisk" style="font-size:12px;">
+                <option value="all">全部</option>
+                <option value="high">高风险(>=8)</option>
+                <option value="medium">中风险(>=4)</option>
+              </select>
+            </label>
           </div>
           <div class="table-wrap">
             <table>
