@@ -27,6 +27,10 @@ function periodValue() {
   return $("periodInput").value || "short";
 }
 
+function sortByDateDesc(items, key = "date") {
+  return [...(items || [])].sort((a, b) => String(b[key] || "").localeCompare(String(a[key] || "")));
+}
+
 async function loadDashboard() {
   const date = dateValue();
   const period = periodValue();
@@ -276,7 +280,7 @@ function renderConfidenceHistory(ranking, history) {
       <strong>${Number(components[key] || 0).toFixed(1)}</strong>
     </div>
   `).join("");
-  $("confidenceHistoryBody").innerHTML = (history.items || []).map((item) => {
+  $("confidenceHistoryBody").innerHTML = sortByDateDesc(history.items).map((item) => {
     const c = item.components || {};
     return `
       <tr>
@@ -449,7 +453,7 @@ function renderDetail(detail) {
 }
 
 function renderRiskHistory(payload) {
-  $("riskHistoryBody").innerHTML = (payload.items || []).map((item) => {
+  $("riskHistoryBody").innerHTML = sortByDateDesc(payload.items).map((item) => {
     const mainRisk = (item.risks || []).slice(0, 2).map((risk) => risk.risk_type).join("、") || "无明显风险";
     return `
       <tr>
