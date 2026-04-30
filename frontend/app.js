@@ -417,6 +417,7 @@ function renderDetail(detail) {
   $("branches").innerHTML = detail.branches.map((name) => `<span class="chip">${name}</span>`).join("");
   $("coreStocks").innerHTML = detail.core_stocks.map((name) => `<span class="chip">${name}</span>`).join("");
   $("modelExplanation").textContent = detail.model_explanation;
+  renderScoreAudit(detail);
   renderStockMetrics(detail.stock_metrics || []);
 
   $("riskList").innerHTML = detail.risks.map((risk) => `
@@ -455,6 +456,93 @@ function renderDetail(detail) {
   fetchJson(`/api/v1/themes/${detail.theme_id}/relay-break?date=${dateValue()}`).then((relay) => {
     // 已通过 sectors 中的 relay_break 展示，此处预留扩展
   }).catch(() => {});
+}
+
+function renderScoreAudit(detail) {
+  const config = (state.modelConfig && state.modelConfig.active) || {};
+  const heatWeight = Number(config.heat_weight ?? 0.4);
+  const continuationWeight = Number(config.continuation_weight ?? 0.6);
+  const sectors = detail.sectors || [];
+  const stats = sectors[0] ? (sectors[0].stats || {}) : {};
+  $("scoreFormula").innerHTML = `
+    <strong>主线分 = ${heatWeight.toFixed(2)} × 热度分 + ${continuationWeight.toFixed(2)} × 延续性分 - 风险扣分</strong>
+    <span>${detail.theme_score} = ${heatWeight.toFixed(2)} × ${detail.heat_score} + ${continuationWeight.toFixed(2)} × ${detail.continuation_score} - ${detail.risk_penalty}</span>
+  `;
+
+  const sourceLabel = stats.universe_source === "theme_universe" ? "配置样例成分" : "东方财富映射成分";
+  const cards = [
+    ["成分来源", sourceLabel, stats.universe_note || ""],
+    ["有效成分", `${stats.stock_count || 0} 只`, `配置成分 ${stats.configured_stock_count || stats.stock_count || 0} 只`],
+    ["涨停/触板", `${stats.limit_count || 0}/${stats.touched_count || 0}`, `炸板 ${stats.break_count || 0}，最高连板 ${stats.max_consecutive_boards || 0}`],
+    ["成交放大", `${Number(stats.amount_ratio || 0).toFixed(2)} 倍`, `成交额 ${formatAmount(stats.amount || 0)}`],
+    ["上涨广度", `${Math.round(Number(stats.up_ratio || 0) * 100)}%`, `中位涨幅 ${Number(stats.median_pct || 0).toFixed(2)}%`],
+    ["近5日强度", `${Number(stats.avg_pct5 || 0).toFixed(2)}%`, `平均涨幅 ${Number(stats.avg_pct || 0).toFixed(2)}%`],
+  ];
+
+  $("scoreAudit").innerHTML = `
+    <div class="audit-card-grid">
+      ${cards.map(([label, value, note]) => `
+        <div class="audit-card">
+          <span>${label}</span>
+          <strong>${value}</strong>
+          <small>${note}</small>
+        </div>
+      `).join("")}
+    </div>
+    ${renderFactorChart("热度分拆解", detail.factor_contribution?.heat || [], "var(--teal)")}
+    ${renderFactorChart("延续性分拆解", detail.factor_contribution?.continuation || [], "var(--green)")}
+    ${renderRiskChart(detail.factor_contribution?.risk || [])}
+  `;
+}
+
+function renderFactorChart(title, rows, color) {
+  if (!rows.length) return "";
+  return `
+    <div class="factor-chart">
+      <h4>${title}</h4>
+      ${rows.map((row) => `
+        <div class="factor-row">
+          <div class="factor-head">
+            <strong>${row.name}</strong>
+            <span>得分 ${Number(row.score || 0).toFixed(2)} / 权重 ${Number(row.weight || 0).toFixed(2)} / 贡献 ${Number(row.weighted || 0).toFixed(2)}</span>
+          </div>
+          <div class="factor-track">
+            <div class="factor-fill" style="width:${Math.max(0, Math.min(100, Number(row.score || 0)))}%;background:${color};"></div>
+          </div>
+          <p>${row.basis || "-"}；${row.formula || "-"}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderRiskChart(rows) {
+  if (!rows.length) {
+    return `
+      <div class="factor-chart">
+        <h4>风险扣分拆解</h4>
+        <div class="factor-row">
+          <div class="factor-head"><strong>无触发风险项</strong><span>扣分 0.00</span></div>
+          <div class="factor-track"><div class="factor-fill" style="width:0%;background:var(--red);"></div></div>
+          <p>当前规则未触发风险扣分。</p>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="factor-chart">
+      <h4>风险扣分拆解</h4>
+      ${rows.map((row) => `
+        <div class="factor-row">
+          <div class="factor-head"><strong>${row.name}</strong><span>扣分 ${Number(row.penalty || 0).toFixed(2)}</span></div>
+          <div class="factor-track">
+            <div class="factor-fill" style="width:${Math.min(100, Number(row.penalty || 0) * 20)}%;background:var(--red);"></div>
+          </div>
+          <p>该项从主线分中扣除。</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function renderRiskHistory(payload) {

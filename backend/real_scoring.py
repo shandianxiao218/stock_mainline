@@ -111,7 +111,28 @@ def pct_score(pct: float, scale: float = 0.08) -> float:
 
 def weighted_score(factors: dict[str, float], weights: dict[str, int]) -> float:
     total = sum(weights.values())
-    return round(sum(float(factors.get(name, 50)) * weight for name, weight in weights.items()) / total, 2)
+    return round(sum(clamp(float(factors.get(name, 50))) * weight for name, weight in weights.items()) / total, 2)
+
+
+def factor_rows(
+    factors: dict[str, float],
+    weights: dict[str, float],
+    formulas: dict[str, str],
+    basis: dict[str, str],
+) -> list[dict[str, Any]]:
+    total = sum(weights.values()) or 1
+    rows = []
+    for name, weight in weights.items():
+        score = round(clamp(float(factors.get(name, 50))), 2)
+        rows.append({
+            "name": name,
+            "score": score,
+            "weight": round(float(weight), 4),
+            "weighted": round(score * float(weight) / total, 2),
+            "formula": formulas.get(name, ""),
+            "basis": basis.get(name, ""),
+        })
+    return rows
 
 
 def limit_threshold(symbol: str) -> float:
@@ -283,6 +304,11 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     core_avg = safe_mean(core_pcts, avg_pct)
     tail_avg = safe_mean(pcts[min(3, len(pcts)):], avg_pct)
     amount_share = amount / market_amount if market_amount else 0
+    # 炸板率：触板股中未封板的比例（SRS 9.2）
+    touched_count = sum(1 for item in metrics if item.get("touched_limit"))
+    break_count = sum(1 for item in metrics if item.get("limit_break"))
+    break_rate = break_count / touched_count if touched_count > 0 else 0
+    max_consecutive = max((item.get("consecutive_boards", 0) for item in metrics), default=0)
 
     # SRS 9.6 资金接力断裂指标
     prev_pcts = load_prev_day_pcts(conn, symbols, trade_date)
@@ -296,13 +322,18 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         limit_rate=limit_rate,
         avg_pct=avg_pct,
     )
+    sentiment_marginal_score = clamp(50 + sentiment["marginal_change"] * 0.5)
+    short_emotion_score = clamp(limit_rate * 220 + max(avg_pct, 0) * 180 + min(max_consecutive, 5) * 8)
+    limit_quality_score = 20.0 if touched_count == 0 else clamp(
+        45 + limit_rate * 110 - break_rate * 55 + min(max_consecutive, 5) * 5 - max(0, 0.45 - close_pos) * 45
+    )
 
     heat_factors = {
         "成交活跃度": clamp(42 + math.log1p(amount / 1_000_000_000) * 14 + (amount_ratio - 1) * 22),
-        "涨停与短线情绪": clamp(35 + limit_rate * 150 + max(avg_pct, 0) * 280),
+        "涨停与短线情绪": short_emotion_score,
         "当日价格强度": pct_score(avg_pct, 0.08),
         "板块广度": clamp(35 + up_ratio * 55 + max(median_pct, 0) * 180),
-        "舆情边际变化率": sentiment["marginal_change"] + 50,
+        "舆情边际变化率": sentiment_marginal_score,
         "舆情绝对热度": sentiment["absolute_heat"],
         "催化强度": 58 if sector.get("catalysts") else 45,
         "容量与可交易性": clamp(35 + amount_share * 800 + math.log1p(amount / 500_000_000) * 12),
@@ -311,20 +342,12 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "成交额持续性": clamp(45 + (amount_ratio - 1) * 25 + max(avg_pct3, 0) * 120),
         "板块广度持续性": clamp(35 + up_ratio * 45 + max(avg_pct3, 0) * 120),
         "核心股结构": clamp(50 + core_avg * 220 - max(tail_avg - core_avg, 0) * 180),
-        "涨停质量": clamp(45 + limit_rate * 110 - max(0, 0.45 - close_pos) * 45),
+        "涨停质量": limit_quality_score,
         "价格相对强度": pct_score(avg_pct5, 0.14),
         "催化持续性": 58 if sector.get("catalysts") else 48,
-        "舆情边际变化": sentiment["marginal_change"] + 50,
+        "舆情边际变化": sentiment_marginal_score,
         "容量与中军承接": clamp(40 + amount_share * 600 + math.log1p(amount / 800_000_000) * 12),
     }
-
-    # 炸板率：触板股中未封板的比例（SRS 9.2）
-    touched_count = sum(1 for item in metrics if item.get("touched_limit"))
-    break_count = sum(1 for item in metrics if item.get("limit_break"))
-    break_rate = break_count / touched_count if touched_count > 0 else 0
-
-    # 最高连板高度
-    max_consecutive = max((item.get("consecutive_boards", 0) for item in metrics), default=0)
 
     risks: dict[str, float] = {}
     if avg_pct5 > 0.18 and amount_ratio > 1.8:
@@ -349,6 +372,8 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         risks["资金接力断裂"] = min(5.0, relay_penalty)
     if up_ratio < 0.35 and avg_pct > 0:
         risks["后排不跟/广度不足"] = min(3.0, 1.0 + (0.35 - up_ratio) * 5)
+    if sector.get("universe_source") == "theme_universe" and len(metrics) < 8:
+        risks["样本覆盖不足"] = 2.0 if len(metrics) >= 5 else 3.0
     # SRS 9.7.3 舆情过热扣分（基于行情代理舆情）
     if is_overheated(sentiment["absolute_heat"], sentiment["marginal_change"], avg_pct, amount_ratio):
         overheated_score = max(0, sentiment["absolute_heat"] - 80) * 0.15
@@ -360,7 +385,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     extreme_count = sum(
         1 for item in metrics
         if abs(item["pct1"]) > 0.08
-        and item.get("limit_up") or item.get("limit_break")
+        and (item.get("limit_up") or item.get("limit_break"))
     )
     if extreme_count >= 3 or (extreme_count >= 2 and max_consecutive >= 5):
         risks["监管/异动风险"] = min(3.0, 0.5 + extreme_count * 0.5 + min(max_consecutive, 8) * 0.15)
@@ -375,6 +400,47 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     if dyn:
         heat_w = _apply_dynamic(heat_w, dyn)
         cont_w = _apply_dynamic(cont_w, dyn)
+
+    heat_basis = {
+        "成交活跃度": f"成交额{amount / 100000000:.2f}亿，较近20日均量放大{amount_ratio:.2f}倍",
+        "涨停与短线情绪": f"涨停{limit_count}只，触板{touched_count}只，最高连板{max_consecutive}，平均涨幅{avg_pct * 100:.2f}%",
+        "当日价格强度": f"平均涨幅{avg_pct * 100:.2f}%",
+        "板块广度": f"上涨占比{up_ratio * 100:.0f}%，中位涨幅{median_pct * 100:.2f}%",
+        "舆情边际变化率": f"当前无真实舆情源，使用成交放大代理；边际变化{sentiment['marginal_change']:.2f}%",
+        "舆情绝对热度": f"行情代理绝对热度{sentiment['absolute_heat']:.2f}",
+        "催化强度": "已配置催化" if sector.get("catalysts") else "未配置明确催化",
+        "容量与可交易性": f"成交额{amount / 100000000:.2f}亿，占全市场{amount_share * 100:.2f}%",
+    }
+    heat_formulas = {
+        "成交活跃度": "成交额规模 + 成交额相对20日均值，封顶100",
+        "涨停与短线情绪": "涨停率、平均涨幅、连板高度；无涨停时不再给短线情绪底分",
+        "当日价格强度": "50 + 平均涨幅 / 8% * 50，限制在0-100",
+        "板块广度": "35 + 上涨占比 * 55 + 中位涨幅 * 180，封顶100",
+        "舆情边际变化率": "50 + 代理边际变化 / 2，限制在0-100",
+        "舆情绝对热度": "成交额放大、涨停率、涨幅的行情代理热度",
+        "催化强度": "有催化58，无催化45；后续接人工/新闻等级",
+        "容量与可交易性": "成交额规模 + 全市场成交占比，封顶100",
+    }
+    continuation_basis = {
+        "成交额持续性": f"成交额放大{amount_ratio:.2f}倍，近3日平均涨幅{avg_pct3 * 100:.2f}%",
+        "板块广度持续性": f"上涨占比{up_ratio * 100:.0f}%，近3日平均涨幅{avg_pct3 * 100:.2f}%",
+        "核心股结构": f"核心股平均涨幅{core_avg * 100:.2f}%，后排平均涨幅{tail_avg * 100:.2f}%",
+        "涨停质量": f"涨停{limit_count}只，触板{touched_count}只，炸板{break_count}只，收盘位置{close_pos:.2f}",
+        "价格相对强度": f"近5日平均涨幅{avg_pct5 * 100:.2f}%",
+        "催化持续性": "已配置催化" if sector.get("catalysts") else "未配置明确催化",
+        "舆情边际变化": f"当前无真实舆情源，使用成交放大代理；边际变化{sentiment['marginal_change']:.2f}%",
+        "容量与中军承接": f"成交额{amount / 100000000:.2f}亿，占全市场{amount_share * 100:.2f}%",
+    }
+    continuation_formulas = {
+        "成交额持续性": "45 + 放量幅度 * 25 + 近3日强度 * 120",
+        "板块广度持续性": "35 + 上涨占比 * 45 + 近3日强度 * 120",
+        "核心股结构": "50 + 核心股强度 * 220 - 后排强于核心时扣分",
+        "涨停质量": "无触板为20；有触板时按封板、炸板、连板、收盘位置计算",
+        "价格相对强度": "50 + 近5日涨幅 / 14% * 50，限制在0-100",
+        "催化持续性": "有催化58，无催化48；后续接催化等级",
+        "舆情边际变化": "50 + 代理边际变化 / 2，限制在0-100",
+        "容量与中军承接": "成交额规模 + 全市场成交占比，封顶100",
+    }
 
     heat = weighted_score(heat_factors, heat_w)
     continuation = weighted_score(continuation_factors, cont_w)
@@ -405,9 +471,16 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
             for item in sorted(metrics, key=lambda row: row["amount"], reverse=True)
         ],
         "factors": {**heat_factors, **continuation_factors},
+        "factor_calculation": {
+            "heat": factor_rows(heat_factors, heat_w, heat_formulas, heat_basis),
+            "continuation": factor_rows(continuation_factors, cont_w, continuation_formulas, continuation_basis),
+        },
         "risks": risks,
         "stats": {
             "stock_count": len(metrics),
+            "configured_stock_count": len(sector["stocks"]),
+            "universe_source": sector.get("universe_source", "eastmoney_mapping"),
+            "universe_note": "当前为本地配置样例成分，不是完整东方财富板块" if sector.get("universe_source") == "theme_universe" else "来自本地主线-东方财富板块映射",
             "avg_pct": round(avg_pct * 100, 2),
             "median_pct": round(median_pct * 100, 2),
             "avg_pct3": round(avg_pct3 * 100, 2),
@@ -618,18 +691,58 @@ def factor_contribution(cluster: list[SectorScore]) -> dict[str, Any]:
     heat = defaultdict(float)
     continuation = defaultdict(float)
     risk = defaultdict(float)
+    heat_meta: dict[str, dict[str, Any]] = {}
+    continuation_meta: dict[str, dict[str, Any]] = {}
     heat_w = {k: float(v) for k, v in HEAT_WEIGHTS.items()}
     cont_w = {k: float(v) for k, v in CONTINUATION_WEIGHTS.items()}
     for item in cluster:
-        for key in heat_w:
-            heat[key] += item.raw["factors"].get(key, 50)
-        for key in cont_w:
-            continuation[key] += item.raw["factors"].get(key, 50)
+        heat_rows = item.raw.get("factor_calculation", {}).get("heat", [])
+        cont_rows = item.raw.get("factor_calculation", {}).get("continuation", [])
+        if heat_rows:
+            for row in heat_rows:
+                key = row["name"]
+                heat[key] += float(row["score"])
+                heat_meta.setdefault(key, row)
+                heat_w[key] = float(row["weight"])
+        else:
+            for key in heat_w:
+                heat[key] += clamp(float(item.raw.get("factors", {}).get(key, 50)))
+        if cont_rows:
+            for row in cont_rows:
+                key = row["name"]
+                continuation[key] += float(row["score"])
+                continuation_meta.setdefault(key, row)
+                cont_w[key] = float(row["weight"])
+        else:
+            for key in cont_w:
+                continuation[key] += clamp(float(item.raw.get("factors", {}).get(key, 50)))
         for key, value in item.raw.get("risks", {}).items():
             risk[key] += value
+    heat_total = sum(heat_w.values()) or 1
+    cont_total = sum(cont_w.values()) or 1
     return {
-        "heat": [{"name": key, "score": round(value / count, 2), "weight": heat_w[key]} for key, value in heat.items()],
-        "continuation": [{"name": key, "score": round(value / count, 2), "weight": cont_w[key]} for key, value in continuation.items()],
+        "heat": [
+            {
+                "name": key,
+                "score": round(value / count, 2),
+                "weight": heat_w[key],
+                "weighted": round((value / count) * heat_w[key] / heat_total, 2),
+                "formula": heat_meta.get(key, {}).get("formula", ""),
+                "basis": heat_meta.get(key, {}).get("basis", ""),
+            }
+            for key, value in heat.items()
+        ],
+        "continuation": [
+            {
+                "name": key,
+                "score": round(value / count, 2),
+                "weight": cont_w[key],
+                "weighted": round((value / count) * cont_w[key] / cont_total, 2),
+                "formula": continuation_meta.get(key, {}).get("formula", ""),
+                "basis": continuation_meta.get(key, {}).get("basis", ""),
+            }
+            for key, value in continuation.items()
+        ],
         "risk": [{"name": key, "penalty": round(value, 2)} for key, value in sorted(risk.items(), key=lambda pair: pair[1], reverse=True)],
     }
 
@@ -683,6 +796,7 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                         "keywords": [theme_name, sector_name],
                         "stocks": [(r[0], r[1]) for r in stocks],
                         "catalysts": [],
+                        "universe_source": "eastmoney_mapping",
                     })
         return sectors
 
@@ -696,7 +810,7 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
         # 优先使用真实板块数据，回退到人工主题配置
         sector_list = load_real_sectors(conn)
         if not sector_list:
-            sector_list = THEME_SECTORS
+            sector_list = [{**sector, "universe_source": "theme_universe"} for sector in THEME_SECTORS]
         scored = [score_sector_from_db(conn, sector, trade_date, market["market_amount"]) for sector in sector_list]
     clusters = aggregate_sectors(scored)
     themes: list[dict[str, Any]] = []

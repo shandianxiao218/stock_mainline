@@ -517,6 +517,96 @@ tbody tr.selected {
   gap: 12px;
 }
 
+.formula-card {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  display: grid;
+  gap: 6px;
+}
+
+.formula-card span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.score-audit {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.audit-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.audit-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  background: #ffffff;
+}
+
+.audit-card span,
+.audit-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.audit-card strong {
+  font-size: 18px;
+}
+
+.factor-chart {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: #ffffff;
+}
+
+.factor-row {
+  display: grid;
+  gap: 6px;
+}
+
+.factor-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.factor-head span,
+.factor-row p {
+  color: var(--muted);
+}
+
+.factor-row p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.factor-track {
+  height: 9px;
+  background: #e8edf3;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.factor-fill {
+  height: 100%;
+}
+
 .bar-row {
   display: grid;
   grid-template-columns: 88px 1fr 48px;
@@ -744,6 +834,7 @@ h4 {
   .quality-grid,
   .role-grid,
   .confidence-components,
+  .audit-card-grid,
   .config-form,
   .backtest-form,
   .catalyst-form,

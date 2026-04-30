@@ -3,7 +3,14 @@ from __future__ import annotations
 import unittest
 
 from model_config_store import get_active_config
-from real_scoring import db_ready, factor_effectiveness_payload, ranking_payload, theme_matrix_payload, compute_relay_break
+from real_scoring import (
+    compute_relay_break,
+    db_ready,
+    detail_payload,
+    factor_effectiveness_payload,
+    ranking_payload,
+    theme_matrix_payload,
+)
 
 
 @unittest.skipUnless(db_ready(), "本地 SQLite 数据库不存在，跳过评分烟测")
@@ -40,6 +47,27 @@ class RealScoringSmokeTest(unittest.TestCase):
         self.assertIn(payload["status"], ["completed", "insufficient_data"])
         if payload["status"] == "completed":
             self.assertGreater(len(payload["items"]), 0)
+
+    def test_factor_scores_are_clamped_and_explainable(self) -> None:
+        payload = ranking_payload("2026-04-29", "short")
+        detail = detail_payload(payload["items"][0]["theme_id"], "2026-04-29")
+        self.assertIsNotNone(detail)
+        for group in ["heat", "continuation"]:
+            for row in detail["factor_contribution"][group]:
+                self.assertGreaterEqual(float(row["score"]), 0)
+                self.assertLessEqual(float(row["score"]), 100)
+                self.assertIn("weighted", row)
+                self.assertIn("basis", row)
+                self.assertIn("formula", row)
+
+    def test_no_limit_theme_does_not_get_short_emotion_floor(self) -> None:
+        payload = ranking_payload("2026-04-29", "short")
+        medicine = next(item for item in payload["items"] if item["theme_name"] == "医药复苏")
+        detail = detail_payload(medicine["theme_id"], "2026-04-29")
+        stats = detail["sectors"][0]["stats"]
+        self.assertEqual(stats["limit_count"], 0)
+        short_emotion = next(row for row in detail["factor_contribution"]["heat"] if row["name"] == "涨停与短线情绪")
+        self.assertLess(short_emotion["score"], 10)
 
     def test_risk_types_within_srs_range(self) -> None:
         """验证所有风险扣分项均在合理范围内。

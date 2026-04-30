@@ -47,6 +47,7 @@
 - 东方财富 C 导入器已解析 `swc8\data\hs_bk_crc_data_new.dat`，生成 `sector_constituents.csv`；SQLite 已有 `em_sector` 和 `em_sector_constituent_history`，当前验证为 1012 个板块、85640 条成分关系。
 - Web 已支持东方财富真实板块浏览，接口为 `/api/v1/sectors` 和 `/api/v1/sectors/{sector_code}/constituents`。
 - 2026-04-30 已修复一次 GLM 引入的性能回归：无 `local_theme` 映射时不能把 1000+ 个东方财富板块全部送入评分。当前策略是返回空列表并回退到 `theme_universe.py` 控制集合，真实板块进入评分前必须先做主线映射或候选裁剪。
+- 2026-04-30 已修正评分解释性问题：因子分统一限制在 0-100，无涨停时短线情绪不再给固定底分，`theme_universe.py` 小样本成分触发“样本覆盖不足”风险；详情页展示每项因子的得分、权重、加权贡献和计算依据。
 
 ## 当前数据边界
 
