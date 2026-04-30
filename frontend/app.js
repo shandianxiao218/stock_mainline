@@ -28,7 +28,11 @@ function periodValue() {
 }
 
 function sortByDateDesc(items, key = "date") {
-  return [...(items || [])].sort((a, b) => String(b[key] || "").localeCompare(String(a[key] || "")));
+  const valueOf = (item) => {
+    if (item && typeof item === "object") return String(item[key] || "");
+    return String(item || "");
+  };
+  return [...(items || [])].sort((a, b) => valueOf(b).localeCompare(valueOf(a)));
 }
 
 async function loadDashboard() {
