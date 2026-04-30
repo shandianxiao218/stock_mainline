@@ -251,12 +251,32 @@ def load_eastmoney_csv(input_dir: Path, db_path: Path) -> dict[str, int | str]:
         conn.commit()
         conn.execute("vacuum")
 
-    return {
+    result = {
         "db_path": str(db_path),
         "stock_count": stock_count,
         "quote_count": quote_count,
         "sector_constituent_count": sector_constituent_count,
     }
+
+    # 自动构建涨停/触板/炸板信号
+    try:
+        from build_limit_signals import build_limit_signals
+        today = datetime.now().strftime("%Y-%m-%d")
+        limit_result = build_limit_signals(today, days=260)
+        result["limit_signals"] = limit_result
+    except Exception as exc:
+        result["limit_signals_error"] = str(exc)
+
+    # 自动构建板块日度行情快照
+    try:
+        from build_sector_snapshots import build_sector_snapshots
+        today = datetime.now().strftime("%Y-%m-%d")
+        snapshot_result = build_sector_snapshots(today, days=60)
+        result["sector_snapshots"] = snapshot_result
+    except Exception as exc:
+        result["sector_snapshots_error"] = str(exc)
+
+    return result
 
 
 def main() -> None:

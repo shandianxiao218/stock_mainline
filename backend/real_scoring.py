@@ -10,6 +10,7 @@ from typing import Any
 
 from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
 from model_config_store import get_active_config, save_config
+from sentiment_store import proxy_sentiment_scores, is_overheated, price_sentiment_divergence
 
 try:
     from watchlist_store import list_positions, list_watchlist
@@ -287,13 +288,22 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     prev_pcts = load_prev_day_pcts(conn, symbols, trade_date)
     relay_metrics = compute_relay_break(metrics, prev_pcts, median_pct)
 
+    # 行情代理舆情评分（SRS 9.7）
+    sentiment = proxy_sentiment_scores(
+        sector.get("sector_id", ""),
+        amount=amount,
+        amount_ratio=amount_ratio,
+        limit_rate=limit_rate,
+        avg_pct=avg_pct,
+    )
+
     heat_factors = {
         "成交活跃度": clamp(42 + math.log1p(amount / 1_000_000_000) * 14 + (amount_ratio - 1) * 22),
         "涨停与短线情绪": clamp(35 + limit_rate * 150 + max(avg_pct, 0) * 280),
         "当日价格强度": pct_score(avg_pct, 0.08),
         "板块广度": clamp(35 + up_ratio * 55 + max(median_pct, 0) * 180),
-        "舆情边际变化率": 50,
-        "舆情绝对热度": 45,
+        "舆情边际变化率": sentiment["marginal_change"] + 50,
+        "舆情绝对热度": sentiment["absolute_heat"],
         "催化强度": 58 if sector.get("catalysts") else 45,
         "容量与可交易性": clamp(35 + amount_share * 800 + math.log1p(amount / 500_000_000) * 12),
     }
@@ -304,7 +314,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "涨停质量": clamp(45 + limit_rate * 110 - max(0, 0.45 - close_pos) * 45),
         "价格相对强度": pct_score(avg_pct5, 0.14),
         "催化持续性": 58 if sector.get("catalysts") else 48,
-        "舆情边际变化": 50,
+        "舆情边际变化": sentiment["marginal_change"] + 50,
         "容量与中军承接": clamp(40 + amount_share * 600 + math.log1p(amount / 800_000_000) * 12),
     }
 
@@ -339,8 +349,13 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         risks["资金接力断裂"] = min(5.0, relay_penalty)
     if up_ratio < 0.35 and avg_pct > 0:
         risks["后排不跟/广度不足"] = min(3.0, 1.0 + (0.35 - up_ratio) * 5)
-    if amount_ratio > 2.2 and avg_pct < 0.01:
-        risks["舆情/成交过热"] = min(3.0, 1.0 + (amount_ratio - 2.2))
+    # SRS 9.7.3 舆情过热扣分（基于行情代理舆情）
+    if is_overheated(sentiment["absolute_heat"], sentiment["marginal_change"], avg_pct, amount_ratio):
+        overheated_score = max(0, sentiment["absolute_heat"] - 80) * 0.15
+        risks["舆情过热"] = min(3.0, 1.0 + overheated_score)
+    # SRS 9.7 舆情与价格/成交背离
+    if price_sentiment_divergence(sentiment["absolute_heat"], avg_pct, amount_ratio):
+        risks["舆情背离"] = min(2.0, 0.5 + (sentiment["absolute_heat"] - 70) * 0.05)
     # SRS 8.4 监管/异动风险：板块内出现极端波动信号
     extreme_count = sum(
         1 for item in metrics
@@ -350,9 +365,9 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     if extreme_count >= 3 or (extreme_count >= 2 and max_consecutive >= 5):
         risks["监管/异动风险"] = min(3.0, 0.5 + extreme_count * 0.5 + min(max_consecutive, 8) * 0.15)
 
-    # 无真实舆情数据时排除占位因子，将权重按比例分配给其他因子
-    heat_w = effective_weights(HEAT_WEIGHTS, _SENTIMENT_FACTORS)
-    cont_w = effective_weights(CONTINUATION_WEIGHTS, _SENTIMENT_FACTORS)
+    # 使用完整权重（舆情已由代理数据填充）
+    heat_w = {k: float(v) for k, v in HEAT_WEIGHTS.items()}
+    cont_w = {k: float(v) for k, v in CONTINUATION_WEIGHTS.items()}
 
     # SRS 10.1: 应用动态因子权重（如果有）
     config = get_active_config()
@@ -406,6 +421,11 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
             "break_rate": round(break_rate, 4),
             "max_consecutive_boards": max_consecutive,
             "close_position": round(close_pos, 3),
+            "sentiment": {
+                "source": "proxy",
+                "absolute_heat": sentiment["absolute_heat"],
+                "marginal_change": sentiment["marginal_change"],
+            },
             "relay_break": {
                 "lead_continue_rate": round(relay_metrics["lead_continue_rate"], 4) if relay_metrics["lead_continue_rate"] is not None else None,
                 "limit_overlap_rate": round(relay_metrics["limit_overlap_rate"], 4) if relay_metrics["limit_overlap_rate"] is not None else None,
@@ -598,9 +618,8 @@ def factor_contribution(cluster: list[SectorScore]) -> dict[str, Any]:
     heat = defaultdict(float)
     continuation = defaultdict(float)
     risk = defaultdict(float)
-    # 使用有效权重（已排除舆情占位因子）
-    heat_w = effective_weights(HEAT_WEIGHTS, _SENTIMENT_FACTORS)
-    cont_w = effective_weights(CONTINUATION_WEIGHTS, _SENTIMENT_FACTORS)
+    heat_w = {k: float(v) for k, v in HEAT_WEIGHTS.items()}
+    cont_w = {k: float(v) for k, v in CONTINUATION_WEIGHTS.items()}
     for item in cluster:
         for key in heat_w:
             heat[key] += item.raw["factors"].get(key, 50)
