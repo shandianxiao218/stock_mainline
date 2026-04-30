@@ -23,6 +23,17 @@ from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
 from review_store import save_daily_review
 from sector_store import list_sectors, sector_constituents, sector_constituent_dates, sector_diff
+from theme_store import (
+    archive_theme,
+    delete_custom_sector,
+    get_theme,
+    list_custom_sectors,
+    list_themes,
+    merge_themes,
+    save_custom_sector,
+    save_theme,
+    theme_history,
+)
 from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
 from theme_universe import PORTFOLIO
 
@@ -151,6 +162,25 @@ class RadarHandler(BaseHTTPRequestHandler):
                 return self.send_error_json(400, "需要 date_a 和 date_b 参数")
             return self.send_json(sector_diff(sector_code, date_a, date_b))
 
+        # --- 主线管理 (FR-003) ---
+        if path == "/api/v1/themes/manage" and method == "GET":
+            status_filter = query.get("status", [None])[0]
+            return self.send_json({"items": list_themes(status_filter)})
+
+        if path.startswith("/api/v1/themes/manage/") and path.endswith("/history"):
+            theme_id = unquote(path.split("/")[4])
+            return self.send_json({"theme_id": theme_id, "items": theme_history(theme_id)})
+
+        if path == "/api/v1/custom-sectors" and method == "GET":
+            return self.send_json({"items": list_custom_sectors()})
+
+        if path.startswith("/api/v1/sectors/") and path.endswith("/diff"):
+            sector_code = unquote(path.split("/")[4])
+            date_a = query.get("date_a", [""])[0]
+            date_b = query.get("date_b", [""])[0]
+            if not date_a or not date_b:
+                return self.send_error_json(400, "需要 date_a 和 date_b 参数")
+
         if path == "/api/v1/model/config":
             return self.send_json({"active": get_active_config(), "items": list_configs()})
 
@@ -268,6 +298,71 @@ class RadarHandler(BaseHTTPRequestHandler):
                 return self.send_json(result)
             except (json.JSONDecodeError, ValueError) as exc:
                 return self.send_error_json(400, str(exc))
+        # --- 主线管理 POST ---
+        if parsed.path == "/api/v1/themes/manage":
+            if not self.require_permission("manage_model"):
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                theme_id = str(body.get("theme_id", ""))
+                theme_name = str(body.get("theme_name", ""))
+                category = str(body.get("category", ""))
+                if not theme_id or not theme_name:
+                    return self.send_error_json(400, "theme_id 和 theme_name 不能为空")
+                result = save_theme(theme_id, theme_name, category, body.get("sectors"), self.current_role())
+                write_audit("theme_save", method="POST", path=parsed.path, target=theme_id, detail=result)
+                return self.send_json(result)
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
+        if parsed.path == "/api/v1/themes/merge":
+            if not self.require_permission("manage_model"):
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                target_id = str(body.get("target_id", ""))
+                source_ids = body.get("source_ids", [])
+                if not target_id or not source_ids:
+                    return self.send_error_json(400, "target_id 和 source_ids 不能为空")
+                result = merge_themes(target_id, source_ids, self.current_role())
+                write_audit("theme_merge", method="POST", path=parsed.path, target=target_id, detail={"source_ids": source_ids})
+                return self.send_json(result) if result else self.send_error_json(404, "目标主线不存在")
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
+        if parsed.path == "/api/v1/themes/archive":
+            if not self.require_permission("manage_model"):
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                theme_id = str(body.get("theme_id", ""))
+                archive_theme(theme_id, self.current_role())
+                write_audit("theme_archive", method="POST", path=parsed.path, target=theme_id)
+                return self.send_json({"theme_id": theme_id, "status": "ok"})
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
+        if parsed.path == "/api/v1/custom-sectors":
+            if not self.require_permission("manage_model"):
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+                result = save_custom_sector(
+                    str(body.get("sector_id", "")),
+                    str(body.get("sector_name", "")),
+                    str(body.get("category", "")),
+                    str(body.get("keywords", "")),
+                    body.get("symbols", []),
+                )
+                write_audit("custom_sector_save", method="POST", path=parsed.path, target=result["sector_id"])
+                return self.send_json(result)
+            except (json.JSONDecodeError, ValueError) as exc:
+                return self.send_error_json(400, str(exc))
         return self.send_error_json(404, "Not found")
 
     def do_DELETE(self) -> None:
@@ -287,6 +382,13 @@ class RadarHandler(BaseHTTPRequestHandler):
             result = delete_position(symbol)
             write_audit("position_delete", method="DELETE", path=parsed.path, target=symbol, detail=result)
             return self.send_json(result)
+        if parsed.path.startswith("/api/v1/custom-sectors/"):
+            if not self.require_permission("manage_model"):
+                return
+            sector_id = unquote(parsed.path.split("/")[4])
+            result = delete_custom_sector(sector_id)
+            write_audit("custom_sector_delete", method="DELETE", path=parsed.path, target=sector_id)
+            return self.send_json({"deleted": result})
         return self.send_error_json(404, "Not found")
 
     def audit_access(self, method: str, path: str, query: dict[str, list[str]]) -> None:
