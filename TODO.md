@@ -74,9 +74,13 @@
 - [x] **人工覆盖自动聚合**：已支持，通过主线映射优先于自动聚合。
 - [x] **主线历史查询**：已实现 theme_history API。
 
-### P4：用真实板块替换人工主题
+### P4：真实板块接入与主线聚合
 
-- [x] **用东方财富真实板块成分替换 `theme_universe.py`**：已实现 load_real_sectors()，优先使用真实板块，回退到人工配置。
+- [x] **东方财富真实板块成分入库**：已通过 C 导入器和 SQLite 装载 `em_sector`、`em_sector_constituent_history`。
+- [x] **真实板块浏览 API/UI**：已提供 `/api/v1/sectors` 和 `/api/v1/sectors/{sector_code}/constituents`。
+- [x] **修复无映射时全量评分超时**：无 `local_theme` 映射时回退到 `theme_universe.py` 控制集合，避免 1000+ 板块拖死首页矩阵和回测。
+- [ ] **真实板块参与评分的裁剪策略**：按主线映射、成交额、涨幅、成分覆盖和聚合阈值筛选候选板块，不能直接全量逐日评分。
+- [ ] **自动聚合结果落库**：将候选底层板块聚合为上层主线，并写入本地主线映射版本。
 - [x] **板块日度行情快照自动构建**：已集成到 load_eastmoney_csv.py 导入流程。
 - [x] **涨停/触板/炸板信号自动构建**：已集成到 load_eastmoney_csv.py 导入流程。
 

@@ -638,7 +638,10 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """从 SQLite 加载东方财富真实板块成分，格式与 THEME_SECTORS 兼容。
 
     优先使用 local_theme + local_theme_sector_mapping 定义的主线-板块映射；
-    若无映射，则直接使用 em_sector 中成分>=5 的板块。
+    若无映射，则返回空列表并由调用方回退到可控的 THEME_SECTORS。
+
+    不能在无映射时直接把 em_sector 的 1000+ 个板块全部送入评分引擎：
+    近 20 日矩阵、置信度历史和因子有效性都会重复逐日评分，导致页面基础加载超时。
     """
     # 检查是否有主线映射
     theme_rows = conn.execute(
@@ -683,39 +686,7 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                     })
         return sectors
 
-    # 无主线映射时，使用 em_sector 中成分>=5 的板块按来源分组
-    rows = conn.execute(
-        """
-        select s.sector_code, s.sector_name, s.source
-        from em_sector s
-        where (select count(*) from em_sector_constituent_history c where c.sector_code = s.sector_code) >= 5
-        order by s.source, s.sector_name
-        """
-    ).fetchall()
-    sectors = []
-    for sector_code, sector_name, source in rows:
-        stocks = conn.execute(
-            """
-            select c.symbol, coalesce(s.name, c.symbol)
-            from em_sector_constituent_history c
-            left join em_stock s on s.symbol = c.symbol
-            where c.sector_code = ?
-            group by c.symbol
-            order by c.symbol
-            """,
-            (sector_code,),
-        ).fetchall()
-        if stocks:
-            sectors.append({
-                "sector_id": sector_code,
-                "sector_name": sector_name,
-                "branch": sector_name,
-                "category": source,
-                "keywords": [sector_name],
-                "stocks": [(r[0], r[1]) for r in stocks],
-                "catalysts": [],
-            })
-    return sectors
+    return []
 
 
 def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
