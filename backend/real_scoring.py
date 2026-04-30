@@ -9,7 +9,7 @@ from statistics import mean, median
 from typing import Any
 
 from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
-from model_config_store import get_active_config
+from model_config_store import get_active_config, save_config
 
 try:
     from watchlist_store import list_positions, list_watchlist
@@ -57,6 +57,21 @@ def effective_weights(base: dict[str, int], exclude: set[str] | None = None) -> 
         return {k: float(v) for k, v in base.items()}
     scale = (remaining_total + excluded_total) / remaining_total
     return {k: round(v * scale, 4) for k, v in remaining.items()}
+
+
+def _apply_dynamic(weights: dict[str, float], dynamic: dict[str, float]) -> dict[str, float]:
+    """SRS 10.1/10.4: 将动态权重应用到有效权重上。
+
+    公式：final = 0.85 * base + 0.15 * dynamic
+    约束：单因子最大调整不超过基础权重 25%。
+    """
+    result = {}
+    for name, base_w in weights.items():
+        dyn_w = dynamic.get(name, base_w)
+        # 约束：动态权重在基础权重的 ±25% 范围内
+        dyn_w = max(base_w * 0.75, min(base_w * 1.25, dyn_w))
+        result[name] = round(0.85 * base_w + 0.15 * dyn_w, 4)
+    return result
 
 
 @dataclass
@@ -339,9 +354,15 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     heat_w = effective_weights(HEAT_WEIGHTS, _SENTIMENT_FACTORS)
     cont_w = effective_weights(CONTINUATION_WEIGHTS, _SENTIMENT_FACTORS)
 
+    # SRS 10.1: 应用动态因子权重（如果有）
+    config = get_active_config()
+    dyn = config.get("dynamic_factor_weights", {})
+    if dyn:
+        heat_w = _apply_dynamic(heat_w, dyn)
+        cont_w = _apply_dynamic(cont_w, dyn)
+
     heat = weighted_score(heat_factors, heat_w)
     continuation = weighted_score(continuation_factors, cont_w)
-    config = get_active_config()
     risk = min(float(config["risk_cap"]), sum(risks.values()))
     composite = round(config["heat_weight"] * heat + config["continuation_weight"] * continuation - risk, 2)
     raw = {
@@ -1286,9 +1307,20 @@ def factor_effectiveness_payload(date: str, holding_period: int = 3) -> dict[str
         })
 
     rows.sort(key=lambda row: (row["action"] == "不调整", -(abs(row["ic_20d"] or 0))))
+
+    # SRS 10.1: 将双窗口确认的动态权重写入模型配置
+    dynamic_weights: dict[str, float] = {}
+    for row in rows:
+        if row["final_weight"] is not None and row["action"] != "不调整":
+            dynamic_weights[row["factor"]] = row["final_weight"]
+    if dynamic_weights:
+        config = get_active_config()
+        config["dynamic_factor_weights"] = dynamic_weights
+        save_config(config)
+
     summary = (
         f"基于本地 SQLite 截至{date_text(target_date)}的可用交易日，按未来{holding_period}日主线成分平均收益计算因子 IC；"
-        "当前为研究评估输出，动态权重建议尚不自动改写基础因子权重。"
+        f"已将{len(dynamic_weights)}项动态权重建议写入模型配置。"
     )
     return {
         "date": date_text(target_date),
