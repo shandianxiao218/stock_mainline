@@ -22,7 +22,7 @@ from data_quality import data_quality_payload
 from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
 from review_store import save_daily_review
-from sector_store import list_sectors, sector_constituents
+from sector_store import list_sectors, sector_constituents, sector_constituent_dates, sector_diff
 from watchlist_store import add_position, add_watchlist, delete_position, delete_watchlist, list_positions, list_watchlist
 from theme_universe import PORTFOLIO
 
@@ -136,7 +136,20 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v1/sectors/") and path.endswith("/constituents"):
             sector_code = unquote(path.split("/")[4])
             limit = int(query.get("limit", ["500"])[0])
-            return self.send_json(sector_constituents(sector_code, limit))
+            as_of = query.get("as_of_date", [None])[0]
+            return self.send_json(sector_constituents(sector_code, limit, as_of))
+
+        if path.startswith("/api/v1/sectors/") and path.endswith("/dates"):
+            sector_code = unquote(path.split("/")[4])
+            return self.send_json({"sector_code": sector_code, "dates": sector_constituent_dates(sector_code)})
+
+        if path.startswith("/api/v1/sectors/") and path.endswith("/diff"):
+            sector_code = unquote(path.split("/")[4])
+            date_a = query.get("date_a", [""])[0]
+            date_b = query.get("date_b", [""])[0]
+            if not date_a or not date_b:
+                return self.send_error_json(400, "需要 date_a 和 date_b 参数")
+            return self.send_json(sector_diff(sector_code, date_a, date_b))
 
         if path == "/api/v1/model/config":
             return self.send_json({"active": get_active_config(), "items": list_configs()})

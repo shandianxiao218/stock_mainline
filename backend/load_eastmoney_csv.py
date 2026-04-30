@@ -82,10 +82,13 @@ def reset_tables(conn: sqlite3.Connection) -> None:
         """
         delete from em_daily_quote;
         delete from em_stock;
-        delete from em_sector_constituent_history;
         delete from em_sector;
         """
     )
+
+
+def _snapshot_date() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
 
 
 def load_stocks(conn: sqlite3.Connection, path: Path) -> int:
@@ -178,16 +181,17 @@ def insert_quotes(conn: sqlite3.Connection, rows: list[tuple[str, int, float, fl
 def load_sector_constituents(conn: sqlite3.Connection, path: Path) -> int:
     if not path.exists():
         return 0
+    snapshot = _snapshot_date()
     count = 0
     sectors: dict[str, tuple[str, str, str]] = {}
-    rows: list[tuple[str, str, str, str, str | None]] = []
+    rows: list[tuple[str, str, str, str, str]] = []
     with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
             sector_code = row["sector_code"]
             source = row["source"]
             sectors[sector_code] = (sector_code, row["sector_name"], source)
-            rows.append((sector_code, row["symbol"], row["market"], source, row.get("as_of_date") or None))
+            rows.append((sector_code, row["symbol"], row["market"], source, row.get("as_of_date") or snapshot))
             if len(rows) >= BATCH_SIZE:
                 count += insert_sector_constituents(conn, rows)
                 rows.clear()
@@ -207,7 +211,7 @@ def load_sector_constituents(conn: sqlite3.Connection, path: Path) -> int:
     return count
 
 
-def insert_sector_constituents(conn: sqlite3.Connection, rows: list[tuple[str, str, str, str, str | None]]) -> int:
+def insert_sector_constituents(conn: sqlite3.Connection, rows: list[tuple[str, str, str, str, str]]) -> int:
     conn.executemany(
         """
         insert into em_sector_constituent_history(sector_code, symbol, market, source, as_of_date)
