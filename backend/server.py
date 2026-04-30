@@ -23,6 +23,7 @@ from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
 from review_store import save_daily_review
 from sector_store import list_sectors, sector_constituents, sector_constituent_dates, sector_diff
+from alert_store import compute_alerts
 from theme_store import (
     archive_theme,
     delete_custom_sector,
@@ -186,6 +187,9 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/auth/roles":
             return self.send_json(roles_payload(self.current_role()))
+
+        if path == "/api/v1/alerts":
+            return self.send_json({"date": date, "items": compute_alerts(date)})
 
         if path == "/api/v1/factors/effectiveness":
             holding_period = int(query.get("holding_period", ["3"])[0])

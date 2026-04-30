@@ -31,7 +31,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, sectors] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, sectors, alerts] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -44,6 +44,7 @@ async function loadDashboard() {
     fetchJson("/api/v1/auth/roles"),
     fetchJson(`/api/v1/catalysts?date=${date}&limit=50`),
     fetchJson("/api/v1/sectors?limit=80"),
+    fetchJson(`/api/v1/alerts?date=${date}`),
   ]);
 
   state.ranking = ranking;
@@ -62,6 +63,7 @@ async function loadDashboard() {
   renderRoles(roles);
   renderCatalysts(catalysts);
   renderSectors(sectors);
+  renderAlerts(alerts);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
@@ -151,6 +153,35 @@ function renderSectors(payload) {
   document.querySelectorAll("#sectorBody tr").forEach((row) => {
     row.addEventListener("click", () => selectSector(row.dataset.sectorCode));
   });
+}
+
+function renderAlerts(payload) {
+  const items = payload.items || [];
+  const countEl = $("alertCount");
+  if (countEl) countEl.textContent = `${items.length} 条`;
+  const listEl = $("alertList");
+  if (!listEl) return;
+  if (!items.length) {
+    listEl.innerHTML = "<p style='padding:4px 8px;font-size:13px;color:#657383;'>当前无预警信号</p>";
+    return;
+  }
+  const typeNames = {
+    new_top10: "新晋前10",
+    rank_surge: "排名急升",
+    risk_surge: "风险急升",
+    core_break: "核心股炸板",
+    relay_break: "接力断裂",
+    confidence_drop: "置信度下降",
+    high_vol_stagnation: "高位滞涨",
+  };
+  listEl.innerHTML = items.map((alert) => `
+    <div class="risk-item">
+      <strong>
+        <span class="severity-${alert.severity}">${typeNames[alert.alert_type] || alert.alert_type}</span>
+      </strong>
+      <p>${alert.message}</p>
+    </div>
+  `).join("");
 }
 
 async function selectSector(sectorCode) {
