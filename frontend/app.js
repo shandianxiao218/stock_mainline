@@ -372,6 +372,33 @@ function renderDetail(detail) {
       <p>${risk.reason}</p>
     </div>
   `).join("") || "<p>暂无明显风险信号</p>";
+
+  // 资金接力断裂分析
+  const relayItems = (detail.sectors || []).map((sec) => {
+    const relay = (sec.stats || {}).relay_break || {};
+    return { name: sec.sector_name, relay };
+  }).filter((item) => item.relay.lead_continue_rate !== null && item.relay.lead_continue_rate !== undefined);
+  $("relayBreakList").innerHTML = relayItems.length
+    ? relayItems.map((item) => {
+      const r = item.relay;
+      const leadTag = r.lead_continue_rate < 0.4 ? " style='color:#c24135'" : "";
+      return `<p><strong>${item.name}</strong>：领涨延续率 <span${leadTag}>${(r.lead_continue_rate * 100).toFixed(0)}%</span>` +
+        (r.limit_overlap_rate !== null ? `，涨停重合率 ${(r.limit_overlap_rate * 100).toFixed(0)}%` : "") +
+        (r.core_deviation !== null ? `，核心偏离 ${r.core_deviation.toFixed(2)}%` : "") +
+        "</p>";
+    }).join("")
+    : "<p>暂无接力断裂数据</p>";
+
+  // 次日验证条件
+  const checks = detail.next_checks || [];
+  $("nextChecksList").innerHTML = checks.length
+    ? checks.map((c) => `<li>${c}</li>`).join("")
+    : "<li>暂无</li>";
+
+  // 加载接力断裂详细 API
+  fetchJson(`/api/v1/themes/${detail.theme_id}/relay-break?date=${dateValue()}`).then((relay) => {
+    // 已通过 sectors 中的 relay_break 展示，此处预留扩展
+  }).catch(() => {});
 }
 
 function renderRiskHistory(payload) {
