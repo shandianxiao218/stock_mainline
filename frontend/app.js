@@ -4,6 +4,7 @@ const state = {
   backtestResult: null,
   selectedThemeId: null,
   selectedSectorCode: null,
+  sectorsLoaded: false,
   stockSort: { key: "amount", direction: "desc" },
   rankingFilter: { confidence: "all", status: "all", riskLevel: "all" },
 };
@@ -31,7 +32,7 @@ async function loadDashboard() {
   const period = periodValue();
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, sectors, alerts] = await Promise.all([
+  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, alerts] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
@@ -43,7 +44,6 @@ async function loadDashboard() {
     fetchJson("/api/v1/audit/logs?limit=80"),
     fetchJson("/api/v1/auth/roles"),
     fetchJson(`/api/v1/catalysts?date=${date}&limit=50`),
-    fetchJson("/api/v1/sectors?limit=80"),
     fetchJson(`/api/v1/alerts?date=${date}`),
   ]);
 
@@ -62,7 +62,6 @@ async function loadDashboard() {
   renderAudit(audit);
   renderRoles(roles);
   renderCatalysts(catalysts);
-  renderSectors(sectors);
   renderAlerts(alerts);
   loadDataSourceStatus();
 
@@ -70,9 +69,8 @@ async function loadDashboard() {
   if (firstTheme) {
     await selectTheme(state.selectedThemeId || firstTheme.theme_id);
   }
-  const firstSector = sectors.items && sectors.items[0];
-  if (firstSector) {
-    await selectSector(state.selectedSectorCode || firstSector.sector_code);
+  if (!$("sectors").classList.contains("is-hidden")) {
+    await loadSectors();
   }
 }
 
@@ -153,6 +151,24 @@ function renderSectors(payload) {
   document.querySelectorAll("#sectorBody tr").forEach((row) => {
     row.addEventListener("click", () => selectSector(row.dataset.sectorCode));
   });
+}
+
+async function showSectorsPanel() {
+  $("sectors").classList.remove("is-hidden");
+  $("sectors").setAttribute("aria-hidden", "false");
+  if (!state.sectorsLoaded) {
+    await loadSectors();
+  }
+}
+
+async function loadSectors() {
+  const sectors = await fetchJson("/api/v1/sectors?limit=80");
+  renderSectors(sectors);
+  state.sectorsLoaded = true;
+  const firstSector = sectors.items && sectors.items[0];
+  if (firstSector) {
+    await selectSector(state.selectedSectorCode || firstSector.sector_code);
+  }
 }
 
 function renderAlerts(payload) {
@@ -771,6 +787,14 @@ $("positionForm").addEventListener("submit", addPosition);
 $("modelConfigForm").addEventListener("submit", saveModelConfig);
 $("catalystForm").addEventListener("submit", addCatalyst);
 $("closeKlineBtn").addEventListener("click", closeKline);
+$("sectorsNav").addEventListener("click", (event) => {
+  event.preventDefault();
+  showSectorsPanel().then(() => {
+    $("sectors").scrollIntoView({ behavior: "smooth", block: "start" });
+  }).catch((error) => {
+    $("reportText").textContent = `真实板块加载失败：${error.message}`;
+  });
+});
 document.querySelectorAll(".component-table th[data-sort]").forEach((th) => {
   th.addEventListener("click", () => {
     const key = th.dataset.sort;
