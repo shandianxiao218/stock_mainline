@@ -274,9 +274,20 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "容量与中军承接": clamp(40 + amount_share * 600 + math.log1p(amount / 800_000_000) * 12),
     }
 
+    # 炸板率：触板股中未封板的比例（SRS 9.2）
+    touched_count = sum(1 for item in metrics if item.get("touched_limit"))
+    break_count = sum(1 for item in metrics if item.get("limit_break"))
+    break_rate = break_count / touched_count if touched_count > 0 else 0
+
+    # 最高连板高度
+    max_consecutive = max((item.get("consecutive_boards", 0) for item in metrics), default=0)
+
     risks: dict[str, float] = {}
     if avg_pct5 > 0.18 and amount_ratio > 1.8:
         risks["板块连续高潮"] = min(4.0, 1.5 + avg_pct5 * 10)
+    # SRS 8.4 炸板率过高：触板股>=2 且炸板率>40% 时扣分
+    if touched_count >= 2 and break_rate > 0.4:
+        risks["炸板率过高"] = min(4.0, 1.0 + (break_rate - 0.4) * 8 + min(touched_count, 5) * 0.3)
     if close_pos < 0.35 and amount_ratio > 1.3:
         risks["高位放量滞涨"] = min(4.0, 1.0 + (1.4 - close_pos) * 2)
     if core_avg < tail_avg - 0.015:
@@ -286,6 +297,14 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         risks["后排不跟/广度不足"] = min(3.0, 1.0 + (0.35 - up_ratio) * 5)
     if amount_ratio > 2.2 and avg_pct < 0.01:
         risks["舆情/成交过热"] = min(3.0, 1.0 + (amount_ratio - 2.2))
+    # SRS 8.4 监管/异动风险：板块内出现极端波动信号
+    extreme_count = sum(
+        1 for item in metrics
+        if abs(item["pct1"]) > 0.08
+        and item.get("limit_up") or item.get("limit_break")
+    )
+    if extreme_count >= 3 or (extreme_count >= 2 and max_consecutive >= 5):
+        risks["监管/异动风险"] = min(3.0, 0.5 + extreme_count * 0.5 + min(max_consecutive, 8) * 0.15)
 
     heat = weighted_score(heat_factors, HEAT_WEIGHTS)
     continuation = weighted_score(continuation_factors, CONTINUATION_WEIGHTS)
@@ -328,6 +347,10 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
             "amount": round(amount, 2),
             "amount_ratio": round(amount_ratio, 3),
             "limit_count": limit_count,
+            "touched_count": touched_count,
+            "break_count": break_count,
+            "break_rate": round(break_rate, 4),
+            "max_consecutive_boards": max_consecutive,
             "close_position": round(close_pos, 3),
         },
     }

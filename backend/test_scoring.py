@@ -41,6 +41,33 @@ class RealScoringSmokeTest(unittest.TestCase):
         if payload["status"] == "completed":
             self.assertGreater(len(payload["items"]), 0)
 
+    def test_risk_types_within_srs_range(self) -> None:
+        """验证所有风险扣分项均在 SRS 8.4 规定的区间内。"""
+        srs_max = {
+            "板块连续高潮": 4, "炸板率过高": 4, "核心股走弱": 5,
+            "资金接力断裂": 5, "舆情/成交过热": 3, "高位放量滞涨": 4,
+            "后排不跟/广度不足": 3, "监管/异动风险": 3, "数据缺失": 20,
+        }
+        payload = ranking_payload("2026-04-29", "short")
+        for theme in payload["items"]:
+            for risk in theme.get("risks", []):
+                risk_type = risk["risk_type"]
+                penalty = float(risk["penalty"])
+                self.assertLessEqual(penalty, srs_max.get(risk_type, 20),
+                                     f"{risk_type} 扣分 {penalty} 超过 SRS 上限")
+
+    def test_sector_stats_include_break_rate(self) -> None:
+        """验证板块统计包含炸板率相关字段。"""
+        payload = ranking_payload("2026-04-29", "short")
+        for theme in payload["items"]:
+            for sector in theme.get("sectors", []):
+                stats = sector.get("stats", {})
+                self.assertIn("break_rate", stats)
+                self.assertIn("touched_count", stats)
+                self.assertIn("max_consecutive_boards", stats)
+                self.assertGreaterEqual(stats["break_rate"], 0)
+                self.assertLessEqual(stats["break_rate"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
