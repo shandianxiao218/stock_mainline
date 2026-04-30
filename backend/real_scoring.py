@@ -268,6 +268,10 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     tail_avg = safe_mean(pcts[min(3, len(pcts)):], avg_pct)
     amount_share = amount / market_amount if market_amount else 0
 
+    # SRS 9.6 资金接力断裂指标
+    prev_pcts = load_prev_day_pcts(conn, symbols, trade_date)
+    relay_metrics = compute_relay_break(metrics, prev_pcts, median_pct)
+
     heat_factors = {
         "成交活跃度": clamp(42 + math.log1p(amount / 1_000_000_000) * 14 + (amount_ratio - 1) * 22),
         "涨停与短线情绪": clamp(35 + limit_rate * 150 + max(avg_pct, 0) * 280),
@@ -307,7 +311,17 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         risks["高位放量滞涨"] = min(4.0, 1.0 + (1.4 - close_pos) * 2)
     if core_avg < tail_avg - 0.015:
         risks["核心股走弱"] = min(5.0, 2.0 + (tail_avg - core_avg) * 70)
-        risks["资金接力断裂"] = min(5.0, 1.0 + (tail_avg - core_avg) * 60)
+    # SRS 9.6 资金接力断裂：综合领涨延续率、涨停重合率、核心股偏离度
+    relay = relay_metrics
+    relay_penalty = 0.0
+    if relay["lead_continue_rate"] is not None and relay["lead_continue_rate"] < 0.4:
+        relay_penalty += 1.0 + (0.4 - relay["lead_continue_rate"]) * 5
+    if relay["limit_overlap_rate"] is not None and relay["limit_overlap_rate"] < 0.15 and limit_count >= 2:
+        relay_penalty += 1.0 + (0.15 - relay["limit_overlap_rate"]) * 7
+    if relay["core_deviation"] is not None and relay["core_deviation"] > 0.02:
+        relay_penalty += 2.0 + relay["core_deviation"] * 50
+    if relay_penalty > 0:
+        risks["资金接力断裂"] = min(5.0, relay_penalty)
     if up_ratio < 0.35 and avg_pct > 0:
         risks["后排不跟/广度不足"] = min(3.0, 1.0 + (0.35 - up_ratio) * 5)
     if amount_ratio > 2.2 and avg_pct < 0.01:
@@ -371,9 +385,94 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
             "break_rate": round(break_rate, 4),
             "max_consecutive_boards": max_consecutive,
             "close_position": round(close_pos, 3),
+            "relay_break": {
+                "lead_continue_rate": round(relay_metrics["lead_continue_rate"], 4) if relay_metrics["lead_continue_rate"] is not None else None,
+                "limit_overlap_rate": round(relay_metrics["limit_overlap_rate"], 4) if relay_metrics["limit_overlap_rate"] is not None else None,
+                "core_deviation": round(relay_metrics["core_deviation"] * 100, 2) if relay_metrics["core_deviation"] is not None else None,
+            },
         },
     }
     return SectorScore(raw, heat, continuation, round(risk, 2), composite)
+
+
+def compute_relay_break(
+    metrics: list[dict[str, Any]],
+    prev_pcts: dict[str, float],
+    today_median_pct: float,
+) -> dict[str, float | None]:
+    """计算 SRS 9.6 资金接力断裂三项指标。
+
+    - 领涨延续率: 昨日涨幅前 N 股中今日继续跑赢板块中位数的比例
+    - 涨停重合率: 今日涨停股中昨日涨幅也强势的比例
+    - 核心股偏离度: 板块中位数涨幅 - 核心股平均涨幅（正值=核心弱于后排）
+    """
+    # 领涨延续率
+    lead_continue_rate: float | None = None
+    if prev_pcts:
+        sorted_prev = sorted(prev_pcts.items(), key=lambda pair: pair[1], reverse=True)
+        leaders = sorted_prev[: max(3, len(sorted_prev) // 3)]
+        if leaders:
+            continued = sum(
+                1 for symbol, _ in leaders
+                if any(m["symbol"] == symbol and m["pct1"] > today_median_pct for m in metrics)
+            )
+            lead_continue_rate = continued / len(leaders)
+
+    # 涨停重合率
+    limit_overlap_rate: float | None = None
+    today_limit_symbols = {m["symbol"] for m in metrics if m.get("limit_up")}
+    if today_limit_symbols and prev_pcts:
+        strong_threshold = 0.05
+        overlap = sum(
+            1 for s in today_limit_symbols
+            if prev_pcts.get(s, 0) >= strong_threshold
+        )
+        limit_overlap_rate = overlap / len(today_limit_symbols)
+
+    # 核心股偏离度: 中位数涨幅 - 核心股平均涨幅
+    core_deviation: float | None = None
+    if len(metrics) >= 4:
+        sorted_by_amount = sorted(metrics, key=lambda m: m["amount"], reverse=True)
+        core_symbols = {m["symbol"] for m in sorted_by_amount[:3]}
+        core_avg = safe_mean([m["pct1"] for m in metrics if m["symbol"] in core_symbols], today_median_pct)
+        core_deviation = today_median_pct - core_avg
+
+    return {
+        "lead_continue_rate": lead_continue_rate,
+        "limit_overlap_rate": limit_overlap_rate,
+        "core_deviation": core_deviation,
+    }
+
+
+def prev_trade_date(conn: sqlite3.Connection, trade_date: int) -> int | None:
+    row = conn.execute(
+        "select max(trade_date) from em_daily_quote where trade_date < ?",
+        (trade_date,),
+    ).fetchone()
+    return int(row[0]) if row and row[0] else None
+
+
+def load_prev_day_pcts(conn: sqlite3.Connection, symbols: list[str], trade_date: int) -> dict[str, float]:
+    """加载前一交易日个股涨跌幅，用于资金接力断裂计算。"""
+    prev_td = prev_trade_date(conn, trade_date)
+    if not prev_td or not symbols:
+        return {}
+    prev_prev_td = prev_trade_date(conn, prev_td)
+    if not prev_prev_td:
+        return {}
+    placeholders = ",".join("?" for _ in symbols)
+    rows = conn.execute(
+        f"""
+        select q.symbol, (q.close - p.close) / p.close
+        from em_daily_quote q
+        join em_daily_quote p on p.symbol = q.symbol
+        where q.trade_date = ? and p.trade_date = ?
+          and q.close > 0 and p.close > 0
+          and q.symbol in ({placeholders})
+        """,
+        [prev_td, prev_prev_td, *symbols],
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
 
 
 def load_limit_signals(conn: sqlite3.Connection, symbols: list[str], trade_date: str) -> dict[str, dict[str, Any]]:

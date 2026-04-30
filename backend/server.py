@@ -90,6 +90,21 @@ class RadarHandler(BaseHTTPRequestHandler):
             days = int(query.get("days", ["20"])[0])
             return self.send_json(risk_history_payload(theme_id, date, days))
 
+        if path.startswith("/api/v1/themes/") and path.endswith("/relay-break"):
+            theme_id = unquote(path.split("/")[4])
+            theme = find_theme(theme_id, date)
+            if not theme:
+                return self.send_error_json(404, "Theme not found")
+            relay_items = []
+            for sector in theme.get("sectors", []):
+                relay = sector.get("stats", {}).get("relay_break", {})
+                relay_items.append({
+                    "sector_id": sector["sector_id"],
+                    "sector_name": sector["sector_name"],
+                    "relay_break": relay,
+                })
+            return self.send_json({"date": date, "theme_id": theme_id, "theme_name": theme["theme_name"], "sectors": relay_items})
+
         if path.startswith("/api/v1/themes/") and path.endswith("/factor-contribution"):
             theme_id = unquote(path.split("/")[4])
             theme = find_theme(theme_id, date)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from model_config_store import get_active_config
-from real_scoring import db_ready, factor_effectiveness_payload, ranking_payload, theme_matrix_payload
+from real_scoring import db_ready, factor_effectiveness_payload, ranking_payload, theme_matrix_payload, compute_relay_break
 
 
 @unittest.skipUnless(db_ready(), "本地 SQLite 数据库不存在，跳过评分烟测")
@@ -67,6 +67,58 @@ class RealScoringSmokeTest(unittest.TestCase):
                 self.assertIn("max_consecutive_boards", stats)
                 self.assertGreaterEqual(stats["break_rate"], 0)
                 self.assertLessEqual(stats["break_rate"], 1)
+
+    def test_relay_break_stats_in_sector(self) -> None:
+        """验证板块统计包含资金接力断裂指标。"""
+        payload = ranking_payload("2026-04-29", "short")
+        for theme in payload["items"]:
+            for sector in theme.get("sectors", []):
+                relay = sector.get("stats", {}).get("relay_break", {})
+                self.assertIn("lead_continue_rate", relay)
+                self.assertIn("limit_overlap_rate", relay)
+                self.assertIn("core_deviation", relay)
+
+
+class RelayBreakUnitTest(unittest.TestCase):
+    """资金接力断裂指标单元测试。"""
+
+    def test_compute_relay_break_healthy(self) -> None:
+        """领涨延续率 > 60% 时不应触发接力断裂扣分。"""
+        metrics = [
+            {"symbol": "A", "pct1": 0.05, "amount": 100, "limit_up": False},
+            {"symbol": "B", "pct1": 0.03, "amount": 80, "limit_up": False},
+            {"symbol": "C", "pct1": 0.02, "amount": 60, "limit_up": False},
+            {"symbol": "D", "pct1": -0.01, "amount": 40, "limit_up": False},
+        ]
+        prev_pcts = {"A": 0.06, "B": 0.04, "C": 0.03, "D": 0.01}
+        result = compute_relay_break(metrics, prev_pcts, 0.025)
+        self.assertIsNotNone(result["lead_continue_rate"])
+        self.assertGreater(result["lead_continue_rate"], 0.6)
+
+    def test_compute_relay_break_broken(self) -> None:
+        """领涨延续率 < 20% 时应标记为断裂。"""
+        metrics = [
+            {"symbol": "A", "pct1": -0.03, "amount": 100, "limit_up": False},
+            {"symbol": "B", "pct1": -0.02, "amount": 80, "limit_up": False},
+            {"symbol": "C", "pct1": 0.05, "amount": 60, "limit_up": False},
+            {"symbol": "D", "pct1": 0.04, "amount": 40, "limit_up": False},
+            {"symbol": "E", "pct1": 0.03, "amount": 30, "limit_up": False},
+            {"symbol": "F", "pct1": 0.02, "amount": 20, "limit_up": False},
+        ]
+        # 昨日领涨 A、B、C、D、E（按涨幅排序前 1/3），但今日 A、B 大跌
+        prev_pcts = {"A": 0.08, "B": 0.07, "C": 0.06, "D": 0.05, "E": 0.04, "F": 0.00}
+        # 今日中位数约 0.01，领涨股 A(-3%)、B(-2%) 未跑赢
+        result = compute_relay_break(metrics, prev_pcts, 0.01)
+        self.assertLess(result["lead_continue_rate"], 0.4)
+
+    def test_compute_relay_break_no_prev(self) -> None:
+        """无前日数据时返回 None。"""
+        metrics = [
+            {"symbol": "A", "pct1": 0.05, "amount": 100, "limit_up": False},
+        ]
+        result = compute_relay_break(metrics, {}, 0.01)
+        self.assertIsNone(result["lead_continue_rate"])
+        self.assertIsNone(result["limit_overlap_rate"])
 
 
 if __name__ == "__main__":
