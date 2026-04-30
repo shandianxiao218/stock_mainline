@@ -26,7 +26,7 @@
 
 - 评分仍使用确定性的样例板块指标；东方财富个股日线导出已通过 `tools/eastmoney_import.c` 跑通。
 - 东方财富 C 导出的 `stocks.csv` 与 `daily_quotes.csv` 已可通过 `backend/load_eastmoney_csv.py` 装载进本地 SQLite：`backend/data/radar.db`。
-- 当前已验证入库数据：股票 5523 条，日线 100813 条，日期范围 20260401 至 20260429。
+- 当前已验证入库数据：股票 5524 条，日线 105818 条，日期范围 20260401 至 20260430。
 - 主线榜单已切换为真实日线驱动：行情、涨跌幅、成交、广度、涨停近似和风险扣分来自 SQLite。
 - 当前板块/主题成分已改用内置“主线 -> 东方财富真实板块代码”白名单，成分来自 `em_sector_constituent_history`；`backend/theme_universe.py` 仅作为无真实板块数据时的兜底。
 - 自动聚合使用分支/类别提示、核心股重叠和关键词相似度。
@@ -48,13 +48,14 @@
 - Web 已支持东方财富真实板块浏览，接口为 `/api/v1/sectors` 和 `/api/v1/sectors/{sector_code}/constituents`。
 - 2026-04-30 已修复一次 GLM 引入的性能回归：无 `local_theme` 映射时不能把 1000+ 个东方财富板块全部送入评分。当前策略是使用内置主线-东方财富板块白名单，真实成分进入评分但不全量扫描。
 - 2026-04-30 已修正评分解释性问题：因子分统一限制在 0-100，无涨停时短线情绪不再给固定底分，`theme_universe.py` 小样本成分触发“样本覆盖不足”风险；详情页展示每项因子的得分、权重、加权贡献和计算依据。
+- 2026-04-30 已修复东方财富股票名称导入：C 导入器从 `StkQuoteList`/`StkQuoteListNsl` 解析 GBK 名称并输出 UTF-8 CSV，名称索引使用 `market + symbol` 避免沪深同码冲突；已验证 `300476=胜宏科技`、`002384=东山精密`、`300750=宁德时代`、`300274=阳光电源`。
 
 ## 当前数据边界
 
 - 东方财富本地二进制读取边界：只在 C 导入器内完成。
 - Python 后端可以读取 C 导出的 CSV 和 SQLite 数据库。
 - `backend/data/radar.db` 是本地运行产物，不提交 Git。
-- 当前数据库包含个股日线、股票基础列表和本地保存的复盘结果；尚未包含真实板块成分、板块行情快照、触板/炸板明细和舆情数据。
+- 当前数据库包含个股日线、股票基础列表、真实板块成分、板块行情快照、触板/炸板近似信号和本地保存的复盘结果；尚未包含真实舆情数据。
 - `local_theme_score_daily`、`local_risk_signal_daily`、`local_confidence_daily`、`local_daily_report` 用于保存本地复盘结果。
 - `local_watchlist` 用于保存自选股，`local_position` 用于保存持仓。
 - `local_model_config` 用于保存本地模型参数版本，当前只管理主公式权重和风险扣分上限。

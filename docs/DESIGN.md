@@ -137,6 +137,7 @@ Tushare 保留为备用或补充数据源，后续可用于交易日历、行业
 - 权限角色：`GET /api/v1/auth/roles` 返回访客、普通用户、研究员、管理员、审计员权限；个人版默认本地管理员。
 - 催化事件：`GET/POST /api/v1/catalysts` 管理人工催化事件和 S/A/B/C 等级。
 - 真实板块：`GET /api/v1/sectors` 和 `GET /api/v1/sectors/{sector_code}/constituents` 查看东方财富板块与成分。
+- 股票名称：`tools/eastmoney_import.c` 从东方财富 `StkQuoteList`/`StkQuoteListNsl` 读取 GBK 名称并输出 UTF-8 `stocks.csv`；名称索引按 `market + symbol` 建立，避免 `000001` 等沪深同码污染。
 - Excel 导出：包含主线榜单、风险明细、置信度、复盘报告、20 日矩阵和成分股明细。
 
 ## 与 SRS 的差异决策记录

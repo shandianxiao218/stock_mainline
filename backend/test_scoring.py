@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import sqlite3
 import unittest
 
 from model_config_store import get_active_config
 from real_scoring import (
+    DB_PATH,
     compute_relay_break,
     db_ready,
     detail_payload,
@@ -76,6 +78,27 @@ class RealScoringSmokeTest(unittest.TestCase):
         self.assertGreater(len(detail["stock_metrics"]), 100)
         sources = {sector["stats"]["universe_source"] for sector in detail["sectors"]}
         self.assertEqual(sources, {"eastmoney_auto"})
+
+    def test_eastmoney_stock_names_are_real_names(self) -> None:
+        with sqlite3.connect(DB_PATH) as conn:
+            rows = dict(
+                conn.execute(
+                    """
+                    select symbol, name
+                    from em_stock
+                    where symbol in ('000001', '000002', '002384', '300274', '300476', '300750')
+                    """
+                ).fetchall()
+            )
+            named_count = conn.execute("select count(*) from em_stock where name != symbol").fetchone()[0]
+
+        self.assertEqual(rows["000001"], "平安银行")
+        self.assertEqual(rows["000002"], "万  科Ａ")
+        self.assertEqual(rows["002384"], "东山精密")
+        self.assertEqual(rows["300274"], "阳光电源")
+        self.assertEqual(rows["300476"], "胜宏科技")
+        self.assertEqual(rows["300750"], "宁德时代")
+        self.assertGreater(named_count, 5000)
 
     def test_risk_types_within_srs_range(self) -> None:
         """验证所有风险扣分项均在合理范围内。

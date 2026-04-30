@@ -74,6 +74,7 @@ typedef struct {
 #define NAME_MAP_SIZE 16384
 typedef struct NameEntry {
     char code[8];
+    char market[4];
     char name[EM_MAX_NAME];
     struct NameEntry *next;
 } NameEntry;
@@ -81,29 +82,32 @@ typedef struct NameEntry {
 static NameEntry *g_name_map[NAME_MAP_SIZE];
 static char g_progress_path[PATH_BUF_SIZE];
 
-static unsigned name_hash(const char *code) {
+static unsigned name_hash(const char *market, const char *code) {
     unsigned h = 5381;
+    while (*market) h = h * 33u + (unsigned char)*market++;
     while (*code) h = h * 33u + (unsigned char)*code++;
     return h & (NAME_MAP_SIZE - 1);
 }
 
-static void name_map_set(const char *code, const char *name) {
-    unsigned h = name_hash(code);
+static void name_map_set(const char *market, const char *code, const char *name) {
+    unsigned h = name_hash(market, code);
     NameEntry *entry = (NameEntry *)malloc(sizeof(NameEntry));
     if (!entry) return;
     strncpy(entry->code, code, sizeof(entry->code) - 1);
     entry->code[sizeof(entry->code) - 1] = '\0';
+    strncpy(entry->market, market, sizeof(entry->market) - 1);
+    entry->market[sizeof(entry->market) - 1] = '\0';
     strncpy(entry->name, name, sizeof(entry->name) - 1);
     entry->name[sizeof(entry->name) - 1] = '\0';
     entry->next = g_name_map[h];
     g_name_map[h] = entry;
 }
 
-static const char *name_map_get(const char *code) {
-    unsigned h = name_hash(code);
+static const char *name_map_get(const char *market, const char *code) {
+    unsigned h = name_hash(market, code);
     NameEntry *entry = g_name_map[h];
     while (entry) {
-        if (strcmp(entry->code, code) == 0) return entry->name;
+        if (strcmp(entry->market, market) == 0 && strcmp(entry->code, code) == 0) return entry->name;
         entry = entry->next;
     }
     return NULL;
@@ -216,7 +220,7 @@ static void unmap_file(HANDLE file, HANDLE map, char *view) {
     if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
 }
 
-static void build_name_table(const char *name_file) {
+static void build_name_table(const char *market, const char *name_file) {
     HANDLE file = INVALID_HANDLE_VALUE;
     HANDLE map = NULL;
     char *mm = NULL;
@@ -241,25 +245,29 @@ static void build_name_table(const char *name_file) {
         char code[7];
         memcpy(code, mm + i, 6);
         code[6] = '\0';
-        if (name_map_get(code)) {
+        if (name_map_get(market, code)) {
             i += 5;
             continue;
         }
 
-        if (i < 120) {
-            i += 5;
-            continue;
-        }
-        const char *window_start = mm + i - 120;
+        const char *window_start = i >= 120 ? mm + i - 120 : mm;
+        const char *window_end = mm + i;
         int best_score = 0;
         char best_name[EM_MAX_NAME];
         best_name[0] = '\0';
-        for (const char *p = window_start; p < mm + i; p++) {
-            if (*p != 0) continue;
-            const char *seg = p + 1;
-            while (seg > window_start && *(seg - 1) != 0) seg--;
+
+        const char *p = window_start;
+        while (p < window_end) {
+            while (p < window_end && *p == 0) p++;
+            const char *seg = p;
+            while (p < window_end && *p != 0) p++;
             int len = (int)(p - seg);
             if (len >= 4 && len <= 24) {
+                while (len > 0 && (unsigned char)seg[0] < 0x20) {
+                    seg++;
+                    len--;
+                }
+                while (len > 0 && (unsigned char)seg[len - 1] < 0x20) len--;
                 int high_bytes = 0;
                 for (int j = 0; j < len; j++) {
                     if ((unsigned char)seg[j] >= 0x80) high_bytes++;
@@ -273,8 +281,39 @@ static void build_name_table(const char *name_file) {
                     }
                 }
             }
+            while (p < window_end && *p == 0) p++;
         }
-        if (best_name[0]) name_map_set(code, best_name);
+
+        const char *after_start = mm + i + 6;
+        const char *after_end = mm + ((i + 126 < file_size) ? i + 126 : file_size);
+        p = after_start;
+        while (p < after_end) {
+            while (p < after_end && *p == 0) p++;
+            const char *seg = p;
+            while (p < after_end && *p != 0) p++;
+            int len = (int)(p - seg);
+            if (len >= 4 && len <= 24) {
+                while (len > 0 && (unsigned char)seg[0] < 0x20) {
+                    seg++;
+                    len--;
+                }
+                while (len > 0 && (unsigned char)seg[len - 1] < 0x20) len--;
+                int high_bytes = 0;
+                for (int j = 0; j < len; j++) {
+                    if ((unsigned char)seg[j] >= 0x80) high_bytes++;
+                }
+                if (high_bytes >= len / 2) {
+                    int score = high_bytes * 4 + len;
+                    if (score >= best_score) {
+                        best_score = score;
+                        memcpy(best_name, seg, (size_t)len);
+                        best_name[len] = '\0';
+                    }
+                }
+            }
+            while (p < after_end && *p == 0) p++;
+        }
+        if (best_name[0]) name_map_set(market, code, best_name);
         i += 5;
     }
 
@@ -316,7 +355,7 @@ static int scan_market_file(const char *day_file, const char *market, StockInfo 
         strncpy(stock->market, market, sizeof(stock->market) - 1);
         stock->total_days = entry->total_days;
         stock->entry_offset = entry_offset;
-        const char *name = name_map_get(code);
+        const char *name = name_map_get(market, code);
         strncpy(stock->name, name && name[0] ? name : code, sizeof(stock->name) - 1);
     }
 
@@ -482,8 +521,10 @@ static void write_stocks_csv(const char *path, StockInfo *stocks, int count) {
     if (!f) return;
     fprintf(f, "symbol,name,market,last_date,last_close,last_volume,total_bars\n");
     for (int i = 0; i < count; i++) {
+        char name_utf8[EM_MAX_NAME * 4];
+        gbk_to_utf8(stocks[i].name, name_utf8, sizeof(name_utf8));
         fprintf(f, "%s,", stocks[i].symbol);
-        csv_text(f, stocks[i].name);
+        csv_text(f, name_utf8[0] ? name_utf8 : stocks[i].symbol);
         fprintf(f, ",%s,%u,%.4f,%u,%d\n",
                 stocks[i].market,
                 stocks[i].last_date,
@@ -501,11 +542,17 @@ static int file_exists(const char *path) {
 
 static void find_name_file(char *out, size_t out_size, const char *root, const char *file_name) {
     char rel[PATH_BUF_SIZE];
-    snprintf(rel, sizeof(rel), "swc8\\data\\StkQuoteList\\%s", file_name);
-    path_join(out, out_size, root, rel);
-    if (file_exists(out)) return;
-    snprintf(rel, sizeof(rel), "swc8\\data\\StkQuoteListNsl\\%s", file_name);
-    path_join(out, out_size, root, rel);
+    const char *dirs[] = {
+        "swc8\\data\\StkQuoteList",
+        "swc8\\config\\DataBackUp\\StkQuoteList",
+        "swc8\\data\\StkQuoteListNsl",
+        "swc8\\config\\DataBackUp\\StkQuoteListNsl",
+    };
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        snprintf(rel, sizeof(rel), "%s\\%s", dirs[i], file_name);
+        path_join(out, out_size, root, rel);
+        if (file_exists(out)) return;
+    }
 }
 
 int main(int argc, char **argv) {
@@ -542,8 +589,8 @@ int main(int argc, char **argv) {
     }
 
     write_progress("names", "", 0, 2, "构建股票名称索引");
-    build_name_table(sh_name_file);
-    build_name_table(sz_name_file);
+    build_name_table("SH", sh_name_file);
+    build_name_table("SZ", sz_name_file);
 
     StockInfo *sh_stocks = NULL;
     StockInfo *sz_stocks = NULL;
