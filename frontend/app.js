@@ -122,17 +122,18 @@ function renderRoles(payload) {
 }
 
 function renderMatrix(matrix) {
+  const dates = sortByDateDesc(matrix.dates);
   $("matrixMeta").textContent = `${matrix.dates.length} 个交易日`;
   $("matrixHead").innerHTML = `
     <tr>
       <th>主线</th>
-      ${matrix.dates.map((date) => `<th>${date.slice(5)}</th>`).join("")}
+      ${dates.map((date) => `<th>${date.slice(5)}</th>`).join("")}
     </tr>
   `;
   $("matrixBody").innerHTML = matrix.items.map((item) => `
     <tr>
       <td><strong>${item.theme_name}</strong></td>
-      ${matrix.dates.map((date) => {
+      ${dates.map((date) => {
         const cell = item.cells[date];
         if (!cell) return "<td class=\"empty-cell\">-</td>";
         const level = cell.theme_score >= 68 ? "hot" : cell.theme_score >= 58 ? "warm" : "cold";
