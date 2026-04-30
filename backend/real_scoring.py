@@ -43,6 +43,21 @@ CONTINUATION_WEIGHTS = {
     "容量与中军承接": 2,
 }
 
+# 无真实舆情数据时需要排除的因子
+_SENTIMENT_FACTORS = {"舆情边际变化率", "舆情绝对热度", "舆情边际变化"}
+
+
+def effective_weights(base: dict[str, int], exclude: set[str] | None = None) -> dict[str, float]:
+    """当排除部分因子时，将排除因子的权重按比例分配给剩余因子。"""
+    exclude = exclude or set()
+    remaining = {k: v for k, v in base.items() if k not in exclude}
+    excluded_total = sum(v for k, v in base.items() if k in exclude)
+    remaining_total = sum(remaining.values())
+    if not excluded_total or not remaining_total:
+        return {k: float(v) for k, v in base.items()}
+    scale = (remaining_total + excluded_total) / remaining_total
+    return {k: round(v * scale, 4) for k, v in remaining.items()}
+
 
 @dataclass
 class SectorScore:
@@ -306,8 +321,12 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     if extreme_count >= 3 or (extreme_count >= 2 and max_consecutive >= 5):
         risks["监管/异动风险"] = min(3.0, 0.5 + extreme_count * 0.5 + min(max_consecutive, 8) * 0.15)
 
-    heat = weighted_score(heat_factors, HEAT_WEIGHTS)
-    continuation = weighted_score(continuation_factors, CONTINUATION_WEIGHTS)
+    # 无真实舆情数据时排除占位因子，将权重按比例分配给其他因子
+    heat_w = effective_weights(HEAT_WEIGHTS, _SENTIMENT_FACTORS)
+    cont_w = effective_weights(CONTINUATION_WEIGHTS, _SENTIMENT_FACTORS)
+
+    heat = weighted_score(heat_factors, heat_w)
+    continuation = weighted_score(continuation_factors, cont_w)
     config = get_active_config()
     risk = min(float(config["risk_cap"]), sum(risks.values()))
     composite = round(config["heat_weight"] * heat + config["continuation_weight"] * continuation - risk, 2)
@@ -459,16 +478,19 @@ def factor_contribution(cluster: list[SectorScore]) -> dict[str, Any]:
     heat = defaultdict(float)
     continuation = defaultdict(float)
     risk = defaultdict(float)
+    # 使用有效权重（已排除舆情占位因子）
+    heat_w = effective_weights(HEAT_WEIGHTS, _SENTIMENT_FACTORS)
+    cont_w = effective_weights(CONTINUATION_WEIGHTS, _SENTIMENT_FACTORS)
     for item in cluster:
-        for key in HEAT_WEIGHTS:
+        for key in heat_w:
             heat[key] += item.raw["factors"].get(key, 50)
-        for key in CONTINUATION_WEIGHTS:
+        for key in cont_w:
             continuation[key] += item.raw["factors"].get(key, 50)
         for key, value in item.raw.get("risks", {}).items():
             risk[key] += value
     return {
-        "heat": [{"name": key, "score": round(value / count, 2), "weight": HEAT_WEIGHTS[key]} for key, value in heat.items()],
-        "continuation": [{"name": key, "score": round(value / count, 2), "weight": CONTINUATION_WEIGHTS[key]} for key, value in continuation.items()],
+        "heat": [{"name": key, "score": round(value / count, 2), "weight": heat_w[key]} for key, value in heat.items()],
+        "continuation": [{"name": key, "score": round(value / count, 2), "weight": cont_w[key]} for key, value in continuation.items()],
         "risk": [{"name": key, "penalty": round(value, 2)} for key, value in sorted(risk.items(), key=lambda pair: pair[1], reverse=True)],
     }
 
