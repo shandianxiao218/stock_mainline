@@ -219,5 +219,72 @@ class RelayBreakUnitTest(unittest.TestCase):
         self.assertIsNone(result["limit_overlap_rate"])
 
 
+class CatalystScoringTest(unittest.TestCase):
+    """催化等级评分单元测试。"""
+
+    def test_catalyst_s_grade_high_score(self) -> None:
+        """S 级催化首日应得到高分。"""
+        from catalyst_store import compute_catalyst_score
+        catalysts = [
+            {"title": "重大政策", "level": "S", "trade_date": "2026-04-29"},
+        ]
+        strength, continuation, details = compute_catalyst_score(catalysts, "2026-04-29")
+        self.assertGreater(strength, 80)
+        self.assertGreater(continuation, 80)
+        self.assertEqual(len(details), 1)
+        self.assertEqual(details[0]["level"], "S")
+        self.assertEqual(details[0]["days_since"], 0)
+
+    def test_catalyst_c_grade_low_score(self) -> None:
+        """C 级催化首日应低于 S 级。"""
+        from catalyst_store import compute_catalyst_score
+        catalysts = [
+            {"title": "小道消息", "level": "C", "trade_date": "2026-04-29"},
+        ]
+        strength, _, _ = compute_catalyst_score(catalysts, "2026-04-29")
+        self.assertLess(strength, 35)
+
+    def test_catalyst_decays_over_time(self) -> None:
+        """催化随时间衰减，20 日后趋零。"""
+        from catalyst_store import compute_catalyst_score
+        catalysts = [
+            {"title": "政策催化", "level": "S", "trade_date": "2026-04-09"},
+        ]
+        strength, _, details = compute_catalyst_score(catalysts, "2026-04-29")
+        # 20 天后衰减系数为 0
+        self.assertAlmostEqual(strength, 0.0, places=1)
+        self.assertEqual(details[0]["decay"], 0.0)
+
+    def test_catalyst_partial_decay(self) -> None:
+        """10 天后的催化应衰减约 50%。"""
+        from catalyst_store import compute_catalyst_score
+        catalysts = [
+            {"title": "政策催化", "level": "A", "trade_date": "2026-04-19"},
+        ]
+        strength, _, details = compute_catalyst_score(catalysts, "2026-04-29")
+        # A 级基础分 70，衰减系数 0.5
+        self.assertAlmostEqual(strength, 35.0, places=0)
+        self.assertAlmostEqual(details[0]["decay"], 0.5, places=2)
+
+    def test_no_catalyst_zero_score(self) -> None:
+        """无催化时返回零分。"""
+        from catalyst_store import compute_catalyst_score
+        strength, continuation, details = compute_catalyst_score([], "2026-04-29")
+        self.assertEqual(strength, 0.0)
+        self.assertEqual(continuation, 0.0)
+        self.assertEqual(details, [])
+
+    def test_multiple_catalysts_takes_max(self) -> None:
+        """多条催化取最高有效分。"""
+        from catalyst_store import compute_catalyst_score
+        catalysts = [
+            {"title": "重大政策", "level": "S", "trade_date": "2026-04-20"},
+            {"title": "小道消息", "level": "C", "trade_date": "2026-04-29"},
+        ]
+        strength, _, _ = compute_catalyst_score(catalysts, "2026-04-29")
+        # C 级首日 30 > S 级 9 天后衰减（85 * 0.55 = 46.75）
+        self.assertGreater(strength, 30)
+
+
 if __name__ == "__main__":
     unittest.main()

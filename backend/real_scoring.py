@@ -12,6 +12,7 @@ from typing import Any
 from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
 from model_config_store import get_active_config, save_config
 from sentiment_store import proxy_sentiment_scores, is_overheated, price_sentiment_divergence
+from catalyst_store import get_catalysts_for_scoring, compute_catalyst_score
 
 try:
     from watchlist_store import list_positions, list_watchlist
@@ -411,6 +412,16 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     )
     sentiment_marginal_score = clamp(50 + sentiment["marginal_change"] * 0.5)
     short_emotion_score = clamp(limit_rate * 220 + max(avg_pct, 0) * 180 + min(max_consecutive, 5) * 8)
+
+    # 催化事件评分（按等级和衰减）
+    sector_name = sector.get("sector_name", sector.get("theme_name", ""))
+    sector_catalysts = get_catalysts_for_scoring(conn, sector_name, date_text(trade_date))
+    catalyst_strength, catalyst_continuation, catalyst_details = compute_catalyst_score(
+        sector_catalysts, date_text(trade_date)
+    )
+    # 无催化时给低基础分（45/48），有催化时按等级衰减
+    heat_catalyst_score = 45 + catalyst_strength * 0.55 if catalyst_strength > 0 else 45
+    cont_catalyst_score = 48 + catalyst_continuation * 0.52 if catalyst_continuation > 0 else 48
     limit_quality_score = 20.0 if touched_count == 0 else clamp(
         45 + limit_rate * 110 - break_rate * 55 + min(max_consecutive, 5) * 5 - max(0, 0.45 - close_pos) * 45
     )
@@ -422,7 +433,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "板块广度": clamp(35 + up_ratio * 55 + max(median_pct, 0) * 180),
         "舆情边际变化率": sentiment_marginal_score,
         "舆情绝对热度": sentiment["absolute_heat"],
-        "催化强度": 58 if sector.get("catalysts") else 45,
+        "催化强度": clamp(heat_catalyst_score),
         "容量与可交易性": clamp(35 + amount_share * 800 + math.log1p(amount / 500_000_000) * 12),
     }
     continuation_factors = {
@@ -431,7 +442,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "核心股结构": clamp(50 + core_avg * 220 - max(tail_avg - core_avg, 0) * 180),
         "涨停质量": limit_quality_score,
         "价格相对强度": pct_score(avg_pct5, 0.14),
-        "催化持续性": 58 if sector.get("catalysts") else 48,
+        "催化持续性": clamp(cont_catalyst_score),
         "舆情边际变化": sentiment_marginal_score,
         "容量与中军承接": clamp(40 + amount_share * 600 + math.log1p(amount / 800_000_000) * 12),
     }
@@ -495,7 +506,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "板块广度": f"上涨占比{up_ratio * 100:.0f}%，中位涨幅{median_pct * 100:.2f}%",
         "舆情边际变化率": f"当前无真实舆情源，使用成交放大代理；边际变化{sentiment['marginal_change']:.2f}%",
         "舆情绝对热度": f"行情代理绝对热度{sentiment['absolute_heat']:.2f}",
-        "催化强度": "已配置催化" if sector.get("catalysts") else "未配置明确催化",
+        "催化强度": f"催化强度{heat_catalyst_score:.1f}（{len(catalyst_details)}条催化，最高等级{catalyst_details[0]['level'] if catalyst_details else '无'}）" if catalyst_details else "无催化事件，默认45分",
         "容量与可交易性": f"成交额{amount / 100000000:.2f}亿，占全市场{amount_share * 100:.2f}%",
     }
     heat_formulas = {
@@ -505,7 +516,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "板块广度": "35 + 上涨占比 * 55 + 中位涨幅 * 180，封顶100",
         "舆情边际变化率": "50 + 代理边际变化 / 2，限制在0-100",
         "舆情绝对热度": "成交额放大、涨停率、涨幅的行情代理热度",
-        "催化强度": "有催化58，无催化45；后续接人工/新闻等级",
+        "催化强度": "按S/A/B/C等级赋基础分（85/70/50/30），20日线性衰减，无催化默认45",
         "容量与可交易性": "成交额规模 + 全市场成交占比，封顶100",
     }
     continuation_basis = {
@@ -514,7 +525,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "核心股结构": f"核心股平均涨幅{core_avg * 100:.2f}%，后排平均涨幅{tail_avg * 100:.2f}%",
         "涨停质量": f"涨停{limit_count}只，触板{touched_count}只，炸板{break_count}只，收盘位置{close_pos:.2f}",
         "价格相对强度": f"近5日平均涨幅{avg_pct5 * 100:.2f}%",
-        "催化持续性": "已配置催化" if sector.get("catalysts") else "未配置明确催化",
+        "催化持续性": f"催化持续性{cont_catalyst_score:.1f}（近5日内{len([d for d in catalyst_details if d['days_since'] <= 5])}条有效催化）" if catalyst_details else "无催化事件，默认48分",
         "舆情边际变化": f"当前无真实舆情源，使用成交放大代理；边际变化{sentiment['marginal_change']:.2f}%",
         "容量与中军承接": f"成交额{amount / 100000000:.2f}亿，占全市场{amount_share * 100:.2f}%",
     }
@@ -524,7 +535,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "核心股结构": "50 + 核心股强度 * 220 - 后排强于核心时扣分",
         "涨停质量": "无触板为20；有触板时按封板、炸板、连板、收盘位置计算",
         "价格相对强度": "50 + 近5日涨幅 / 14% * 50，限制在0-100",
-        "催化持续性": "有催化58，无催化48；后续接催化等级",
+        "催化持续性": "近5日催化有效分均值，无催化默认48",
         "舆情边际变化": "50 + 代理边际变化 / 2，限制在0-100",
         "容量与中军承接": "成交额规模 + 全市场成交占比，封顶100",
     }
@@ -541,6 +552,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     }
     raw = {
         **sector,
+        "catalyst_details": catalyst_details,
         "core_stocks": [name for _code, name in sector["stocks"]],
         "stock_metrics": [
             {
