@@ -24,6 +24,17 @@ from permissions import has_permission, roles_payload
 from review_store import save_daily_review
 from sector_store import list_sectors, sector_constituents, sector_constituent_dates, sector_diff
 from alert_store import compute_alerts
+from snapshot_store import (
+    init_snapshot_schema,
+    attach_live_meta,
+    load_confidence_history_snapshot,
+    load_detail_snapshot,
+    load_factor_effectiveness_snapshot,
+    load_matrix_snapshot,
+    load_ranking_snapshot,
+    load_risk_history_snapshot,
+    snapshot_status,
+)
 from theme_store import (
     archive_theme,
     delete_custom_sector,
@@ -95,17 +106,27 @@ class RadarHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
         date = query.get("date", ["2026-04-29"])[0]
+        use_snapshot = query.get("refresh", ["0"])[0] not in ("1", "true", "yes") and query.get("live", ["0"])[0] not in ("1", "true", "yes")
         self.audit_access("GET", path, query)
 
         if path == "/api/v1/themes/ranking":
             limit_arg = query.get("limit", ["10"])[0]
             limit = None if limit_arg == "all" else int(limit_arg)
-            return self.send_json(ranking_payload(date, query.get("period", ["short"])[0], limit))
+            period = query.get("period", ["short"])[0]
+            if use_snapshot:
+                snapshot = load_ranking_snapshot(date, period, limit)
+                if snapshot:
+                    return self.send_json(snapshot)
+            return self.send_json(attach_live_meta(ranking_payload(date, period, limit)))
 
         if path.startswith("/api/v1/themes/") and path.endswith("/detail"):
             theme_id = unquote(path.split("/")[4])
+            if use_snapshot:
+                snapshot = load_detail_snapshot(theme_id, date)
+                if snapshot:
+                    return self.send_json(snapshot)
             data = detail_payload(theme_id, date)
-            return self.send_json(data) if data else self.send_error_json(404, "Theme not found")
+            return self.send_json(attach_live_meta(data)) if data else self.send_error_json(404, "Theme not found")
 
         if path.startswith("/api/v1/themes/") and path.endswith("/risks"):
             theme_id = unquote(path.split("/")[4])
@@ -115,7 +136,11 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v1/themes/") and path.endswith("/risk-history"):
             theme_id = unquote(path.split("/")[4])
             days = int(query.get("days", ["20"])[0])
-            return self.send_json(risk_history_payload(theme_id, date, days))
+            if use_snapshot:
+                snapshot = load_risk_history_snapshot(theme_id, date, days)
+                if snapshot:
+                    return self.send_json(snapshot)
+            return self.send_json(attach_live_meta(risk_history_payload(theme_id, date, days)))
 
         if path.startswith("/api/v1/themes/") and path.endswith("/relay-break"):
             theme_id = unquote(path.split("/")[4])
@@ -208,17 +233,32 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/factors/effectiveness":
             holding_period = int(query.get("holding_period", ["3"])[0])
-            return self.send_json(factor_effectiveness_payload(date, holding_period))
+            if use_snapshot:
+                snapshot = load_factor_effectiveness_snapshot(date, holding_period)
+                if snapshot:
+                    return self.send_json(snapshot)
+            return self.send_json(attach_live_meta(factor_effectiveness_payload(date, holding_period)))
 
         if path == "/api/v1/themes/matrix":
             days = int(query.get("days", ["20"])[0])
             limit_arg = query.get("limit", ["10"])[0]
             limit = None if limit_arg == "all" else int(limit_arg)
-            return self.send_json(theme_matrix_payload(date, days, limit))
+            if use_snapshot:
+                snapshot = load_matrix_snapshot(date, days, limit)
+                if snapshot:
+                    return self.send_json(snapshot)
+            return self.send_json(attach_live_meta(theme_matrix_payload(date, days, limit)))
 
         if path == "/api/v1/confidence/history":
             days = int(query.get("days", ["20"])[0])
-            return self.send_json(confidence_history_payload(date, days))
+            if use_snapshot:
+                snapshot = load_confidence_history_snapshot(date, days)
+                if snapshot:
+                    return self.send_json(snapshot)
+            return self.send_json(attach_live_meta(confidence_history_payload(date, days)))
+
+        if path == "/api/v1/snapshots/status":
+            return self.send_json(snapshot_status(date))
 
         if path == "/api/v1/audit/logs":
             if not self.require_permission("view_audit"):
@@ -536,6 +576,8 @@ class RadarHandler(BaseHTTPRequestHandler):
 def main() -> None:
     host = "127.0.0.1"
     port = 8000
+    if (CURRENT_DIR / "data" / "radar.db").exists():
+        init_snapshot_schema()
     httpd = ThreadingHTTPServer((host, port), RadarHandler)
     print(f"A股板块主线雷达 demo running at http://{host}:{port}")
     httpd.serve_forever()
