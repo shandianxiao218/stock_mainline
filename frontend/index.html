@@ -128,7 +128,15 @@
               <p class="eyebrow">Ranking</p>
               <h3>主线榜单</h3>
             </div>
-            <span id="rankingMeta"></span>
+            <div class="ranking-controls">
+              <label for="rankingLimit">显示</label>
+              <select id="rankingLimit" aria-label="榜单显示数量">
+                <option value="10" selected>前10</option>
+                <option value="100">前100</option>
+                <option value="all">全部</option>
+              </select>
+              <span id="rankingMeta"></span>
+            </div>
           </div>
           <div class="filter-bar" style="display:flex;gap:8px;padding:4px 8px;flex-wrap:wrap;align-items:center;">
             <label style="font-size:12px;">置信度

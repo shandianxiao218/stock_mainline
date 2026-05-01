@@ -1109,10 +1109,23 @@ def confidence(themes: list[dict[str, Any]], market: dict[str, Any]) -> dict[str
     }
 
 
-def ranking_payload(date: str, period: str = "short") -> dict[str, Any]:
+def ranking_payload(date: str, period: str = "short", limit: int | None = None) -> dict[str, Any]:
     themes, market = build_themes_for_date(date)
     conf = confidence(themes, market)
-    return {"date": market["date"], "requested_date": date, "period": period, "market": market, "model_config": get_active_config(), **conf, "items": themes}
+    if limit is not None:
+        limit = max(1, min(int(limit), 500))
+    items = themes if limit is None else themes[:limit]
+    return {
+        "date": market["date"],
+        "requested_date": date,
+        "period": period,
+        "market": market,
+        "model_config": get_active_config(),
+        **conf,
+        "row_limit": "all" if limit is None else limit,
+        "total_count": len(themes),
+        "items": items,
+    }
 
 
 def theme_matrix_payload(date: str, days: int = 20, limit: int | None = 10) -> dict[str, Any]:
@@ -1303,7 +1316,7 @@ def detail_payload(theme_id: str, date: str) -> dict[str, Any] | None:
 
 
 def daily_report(date: str) -> dict[str, Any]:
-    payload = ranking_payload(date)
+    payload = ranking_payload(date, limit=None)
     items = payload["items"]
     top = items[0]
     high_risk = [item for item in items if item["risk_penalty"] >= 8]

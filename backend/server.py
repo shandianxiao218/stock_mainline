@@ -57,10 +57,19 @@ try:
     if not db_ready():
         raise ImportError("本地 SQLite 数据库不存在")
 except ImportError:
-    from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload
+    from scoring import backtest_result, daily_report, detail_payload, find_theme, portfolio_risk, ranking_payload as sample_ranking_payload
 
     def clear_scoring_cache() -> None:
         return None
+
+    def ranking_payload(date: str, period: str = "short", limit: int | None = None) -> dict[str, object]:
+        payload = sample_ranking_payload(date, period)
+        items = payload.get("items", [])
+        payload["total_count"] = len(items)
+        payload["row_limit"] = "all" if limit is None else limit
+        if limit is not None:
+            payload["items"] = items[: max(1, min(int(limit), 500))]
+        return payload
 
     def theme_matrix_payload(date: str, days: int = 20, limit: int | None = 10) -> dict[str, object]:
         return {"date": date, "dates": [], "items": []}
@@ -89,7 +98,9 @@ class RadarHandler(BaseHTTPRequestHandler):
         self.audit_access("GET", path, query)
 
         if path == "/api/v1/themes/ranking":
-            return self.send_json(ranking_payload(date, query.get("period", ["short"])[0]))
+            limit_arg = query.get("limit", ["10"])[0]
+            limit = None if limit_arg == "all" else int(limit_arg)
+            return self.send_json(ranking_payload(date, query.get("period", ["short"])[0], limit))
 
         if path.startswith("/api/v1/themes/") and path.endswith("/detail"):
             theme_id = unquote(path.split("/")[4])
@@ -447,7 +458,7 @@ class RadarHandler(BaseHTTPRequestHandler):
         self.send_excel_full(date)
 
     def send_excel_full(self, date: str) -> None:
-        ranking = ranking_payload(date)
+        ranking = ranking_payload(date, limit=None)
         rows = []
         risk_rows = []
         for item in ranking["items"]:

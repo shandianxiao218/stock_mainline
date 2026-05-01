@@ -414,6 +414,7 @@ button.secondary,
   overflow-x: auto;
 }
 
+.ranking-controls,
 .matrix-controls {
   display: flex;
   align-items: center;
@@ -422,6 +423,7 @@ button.secondary,
   font-size: 13px;
 }
 
+.ranking-controls select,
 .matrix-controls select {
   min-width: 92px;
   padding: 7px 9px;

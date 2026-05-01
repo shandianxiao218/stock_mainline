@@ -26,6 +26,14 @@ class RealScoringSmokeTest(unittest.TestCase):
         self.assertIn("continuation_score", top)
         self.assertIn("risk_penalty", top)
 
+    def test_ranking_supports_row_limit(self) -> None:
+        limited = ranking_payload("2026-04-29", "short", 10)
+        all_rows = ranking_payload("2026-04-29", "short", None)
+        self.assertEqual(limited["row_limit"], 10)
+        self.assertLessEqual(len(limited["items"]), 10)
+        self.assertEqual(all_rows["row_limit"], "all")
+        self.assertGreaterEqual(all_rows["total_count"], len(limited["items"]))
+
     def test_risk_penalty_respects_config_cap(self) -> None:
         payload = ranking_payload("2026-04-29", "short")
         cap = float(get_active_config()["risk_cap"])

@@ -7,6 +7,7 @@ const state = {
   sectorsLoaded: false,
   stockSort: { key: "amount", direction: "desc" },
   rankingFilter: { confidence: "all", status: "all", riskLevel: "all" },
+  rankingLimit: "10",
   matrixLimit: "10",
 };
 
@@ -32,6 +33,10 @@ function matrixLimitValue() {
   return $("matrixLimit") ? $("matrixLimit").value : state.matrixLimit;
 }
 
+function rankingLimitValue() {
+  return $("rankingLimit") ? $("rankingLimit").value : state.rankingLimit;
+}
+
 function sortByDateDesc(items, key = "date") {
   const valueOf = (item) => {
     if (item && typeof item === "object") return String(item[key] || "");
@@ -46,7 +51,7 @@ async function loadDashboard() {
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
 
   const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, alerts] = await Promise.all([
-    fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
+    fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}&limit=${rankingLimitValue()}`),
     fetchJson(`/api/v1/themes/matrix?date=${date}&days=20&limit=${matrixLimitValue()}`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
     fetchJson(`/api/v1/portfolio/risk?date=${date}`),
@@ -62,6 +67,7 @@ async function loadDashboard() {
 
   state.ranking = ranking;
   state.modelConfig = modelConfig;
+  state.rankingLimit = rankingLimitValue();
   state.matrixLimit = matrixLimitValue();
   renderOverview(ranking);
   renderRanking(ranking.items);
@@ -383,6 +389,9 @@ function getFilteredItems() {
 
 function renderRanking(items) {
   const filtered = getFilteredItems();
+  const shown = (state.ranking && state.ranking.items ? state.ranking.items.length : filtered.length);
+  const total = state.ranking ? state.ranking.total_count : shown;
+  $("rankingMeta").textContent = `${filtered.length} / ${shown} / ${total || shown} 个板块`;
   $("rankingBody").innerHTML = filtered.map((item) => `
     <tr data-theme-id="${item.theme_id}" class="${item.theme_id === state.selectedThemeId ? "selected" : ""}">
       <td>${item.rank}</td>
@@ -399,6 +408,13 @@ function renderRanking(items) {
   document.querySelectorAll("#rankingBody tr").forEach((row) => {
     row.addEventListener("click", () => selectTheme(row.dataset.themeId));
   });
+}
+
+async function loadRankingOnly() {
+  state.rankingLimit = rankingLimitValue();
+  state.ranking = await fetchJson(`/api/v1/themes/ranking?date=${dateValue()}&period=${periodValue()}&limit=${state.rankingLimit}`);
+  renderOverview(state.ranking);
+  renderRanking(state.ranking.items);
 }
 
 async function selectTheme(themeId) {
@@ -890,6 +906,11 @@ function formatIc(value) {
 $("refreshBtn").addEventListener("click", loadDashboard);
 $("dateInput").addEventListener("change", loadDashboard);
 $("periodInput").addEventListener("change", loadDashboard);
+$("rankingLimit").addEventListener("change", () => {
+  loadRankingOnly().catch((error) => {
+    $("rankingMeta").textContent = `榜单加载失败：${error.message}`;
+  });
+});
 $("matrixLimit").addEventListener("change", () => {
   loadMatrixOnly().catch((error) => {
     $("matrixMeta").textContent = `矩阵加载失败：${error.message}`;
