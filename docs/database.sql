@@ -1,4 +1,5 @@
 -- A股板块主线雷达 PostgreSQL DDL draft
+-- 此文件为长期 PostgreSQL 迁移草案，当前以 SQLite 为准，不随实现同步更新。
 
 create table if not exists trading_calendar (
   trade_date date primary key,
@@ -228,4 +229,3 @@ create table if not exists backtest_result (
   metrics_json jsonb not null,
   created_at timestamp not null default current_timestamp
 );
-

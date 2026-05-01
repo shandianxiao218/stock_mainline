@@ -22,14 +22,32 @@ GET /api/v1/themes/{theme_id}/detail?date=2026-04-29
 
 返回主线评分拆解、强分支、核心股、风险项、因子贡献和次日验证点。
 
+## 资金接力断裂
+
+```http
+GET /api/v1/themes/{theme_id}/relay-break?date=2026-04-29
+```
+
+返回领涨延续率、涨停重合率、核心股偏离度、断裂信号和扣分说明。
+
+## 自动聚合版本
+
+```http
+GET /api/v1/themes/auto-clusters?date=2026-04-29&limit=100
+```
+
+返回 `local_auto_theme_cluster` 中的自动聚合版本、主线名称、组成板块、版本号和生成时间。
+
 ## 东方财富真实板块
 
 ```http
 GET /api/v1/sectors?limit=100&q=融资
 GET /api/v1/sectors/{sector_code}/constituents?limit=500
+GET /api/v1/sectors/{sector_code}/dates
+GET /api/v1/sectors/{sector_code}/diff?from_date=2026-04-28&to_date=2026-04-29
 ```
 
-返回东方财富真实板块列表、成分数量和指定板块成分股。
+返回东方财富真实板块列表、成分数量、指定板块成分股、可用成分日期和两个日期的成分差异。
 
 ## 风险明细
 
@@ -62,6 +80,26 @@ GET /api/v1/reports/daily?date=2026-04-29
 ```
 
 返回自然语言日度复盘报告。
+
+## 数据质量与覆盖
+
+```http
+GET /api/v1/data/quality?date=2026-04-29
+GET /api/v1/data/coverage?required_years=5
+GET /api/v1/data/no-future-guard
+```
+
+- `data/quality` 返回数据源状态、缺失项、快照命中和降级说明。
+- `data/coverage` 返回日线覆盖起止日期、交易日数量、股票数量和是否满足 5 年覆盖。
+- `data/no-future-guard` 返回回测无未来函数相关检查，包括行情读取约束、成分历史风险和聚合版本风险。
+
+## 预警
+
+```http
+GET /api/v1/alerts?date=2026-04-29
+```
+
+返回新晋主线、排名快速上升、风险扣分快速上升、核心股炸板、资金接力断裂、舆情过热等页面内预警。
 
 ## 新闻催化事件
 
@@ -186,6 +224,14 @@ GET /api/v1/data/eastmoney/status
 
 当前状态中包含 `sector_constituents_csv`、`database.sector_count` 和 `database.sector_constituent_count`，用于验证东方财富真实板块成分导入情况。
 
+## 任务状态
+
+```http
+GET /api/v1/tasks/status
+```
+
+返回快照构建、异步回测等后台任务的状态、耗时、错误和最近更新时间。
+
 ## 回测
 
 ```http
@@ -197,13 +243,23 @@ Content-Type: application/json
   "end_date": "2026-04-29",
   "model_version": "v1.0",
   "holding_period": 3,
-  "top_n": 5
+  "top_n": 5,
+  "async": true
 }
 ```
 
-返回基于 SQLite 可用交易日的真实逐日重放结果。若当前只导入了部分历史，则回测区间会自动受本地数据覆盖范围限制。
+返回基于 SQLite 可用交易日的真实逐日重放结果。`async=true` 或查询参数 `?async=true` 时创建异步任务并返回 `task_id`；未传异步参数时同步返回结果。若当前只导入了部分历史，则回测区间会自动受本地数据覆盖范围限制。
 
 Web 回测页面支持配置模型版本、起止日期、持有期和 Top N，并可将逐日样本下载为 CSV。
+
+## 异步回测状态
+
+```http
+GET /api/v1/backtest/runs/{task_id}
+GET /api/v1/backtest/runs?limit=20
+```
+
+返回异步回测任务状态、参数、指标、样本、错误信息和完成时间。
 
 ## 保存日度复盘
 
@@ -212,6 +268,28 @@ POST /api/v1/reviews/save?date=2026-04-29
 ```
 
 将当日主线评分、风险信号、模型置信度和自然语言复盘报告保存到本地 SQLite。
+
+## 主线管理
+
+```http
+GET /api/v1/themes/manage
+GET /api/v1/themes/manage/{theme_id}/history
+POST /api/v1/themes/manage
+POST /api/v1/themes/merge
+POST /api/v1/themes/archive
+```
+
+用于本地人工主线创建、编辑、历史查看、合并和归档。写操作需要具备模型管理权限，个人版默认可通过 `X-User-Role` 指定本地角色。
+
+## 自定义板块
+
+```http
+GET /api/v1/custom-sectors
+POST /api/v1/custom-sectors
+DELETE /api/v1/custom-sectors/{sector_id}
+```
+
+用于维护本地自定义板块和成分股，供研究员补充东方财富板块体系不足。
 
 ## Excel 导出
 
