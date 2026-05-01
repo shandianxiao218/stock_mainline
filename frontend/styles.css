@@ -118,6 +118,52 @@ main {
   gap: 18px;
 }
 
+.disclaimer-bar {
+  background: #fffbeb;
+  border: 1px solid #f6d365;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.disclaimer-bar-strong {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #991b1b;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.low-confidence-mask {
+  opacity: 0.55;
+  pointer-events: none;
+  position: relative;
+}
+
+.low-confidence-mask::after {
+  content: "当前置信度较低，榜单排序参考价值有限，请谨慎参考";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  padding: 18px 28px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #92400e;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: auto;
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;

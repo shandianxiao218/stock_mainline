@@ -276,6 +276,16 @@ function renderOverview(ranking) {
   $("marketState").textContent = `上涨占比 ${(ranking.market.up_ratio * 100).toFixed(0)}%`;
   $("marketSummary").textContent = ranking.market.summary;
 
+  // R-P0-2: 低置信度时弱化榜单视觉权重
+  const rankingSection = $("ranking");
+  if (rankingSection) {
+    if (ranking.confidence === "low") {
+      rankingSection.classList.add("low-confidence-mask");
+    } else {
+      rankingSection.classList.remove("low-confidence-mask");
+    }
+  }
+
   const highRisk = ranking.items.filter((item) => item.risk_penalty >= 8);
   $("riskCount").textContent = `${highRisk.length} 条`;
   $("riskSummary").textContent = highRisk.map((item) => item.theme_name).join("、") || "暂无高风险主线";
@@ -657,7 +667,8 @@ function renderStock(stock, canDelete, canDeletePosition = false) {
 }
 
 function renderReport(report) {
-  $("reportText").textContent = report.report;
+  const disclaimer = "【免责声明】以下复盘内容为研究辅助，不构成投资建议。\n\n";
+  $("reportText").textContent = disclaimer + report.report;
 }
 
 function renderCatalysts(payload) {
@@ -900,6 +911,7 @@ function renderKlineSvg(bars) {
 }
 
 function formatBacktest(result) {
+  const disclaimer = "\n\n【免责声明】本系统为个人研究辅助工具，回测结果仅供学习参考，不构成任何投资建议。历史表现不代表未来收益。";
   if (result.status !== "completed") {
     const lines = [
       `状态：${result.status}`,
@@ -927,7 +939,7 @@ function formatBacktest(result) {
       `${sample.trade_date} -> ${sample.exit_date}，收益 ${(sample.selected_return * 100).toFixed(2)}%，超额 ${(sample.excess_return * 100).toFixed(2)}%，${sample.selected_themes.join("、")}`
     ),
   ];
-  return lines.join("\n");
+  return lines.join("\n") + disclaimer;
 }
 
 function price(value) {

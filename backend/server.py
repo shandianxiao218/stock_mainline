@@ -680,8 +680,11 @@ class RadarHandler(BaseHTTPRequestHandler):
                     "原因": risk["reason"],
                 })
 
+        disclaimer_text = "本系统为个人研究辅助工具，所有数据、评分和排序仅供学习参考，不构成任何投资建议。请勿据此做出投资决策。"
+
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            pd.DataFrame([{"免责声明": disclaimer_text}]).to_excel(writer, index=False, sheet_name="免责声明")
             pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="主线榜单")
             pd.DataFrame(risk_rows).to_excel(writer, index=False, sheet_name="风险明细")
             pd.DataFrame([ranking["components"]]).to_excel(writer, index=False, sheet_name="置信度")
