@@ -37,6 +37,7 @@
 - [x] 对照 SRS v1.0 检查未实现功能，写入 TODO 并继续实现。
 - [x] 增加板块日度行情快照构建脚本 `build_sector_snapshots.py`。
 - [x] 增加涨停/触板/炸板/连板信号构建脚本 `build_limit_signals.py`。
+- [x] 编写软件设计说明书，并在文档末尾增加 SRS 需求追踪表。
 
 ---
 
