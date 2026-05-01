@@ -17,8 +17,10 @@ sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
 from audit_store import list_audit_logs, write_audit
+from backtest_store import create_backtest_run, fail_backtest_run, finish_backtest_run, list_backtest_runs
 from catalyst_store import add_catalyst, list_catalysts
 from data_quality import data_quality_payload
+from data_validation import data_coverage_payload, no_future_guard_payload
 from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
 from review_store import save_daily_review
@@ -176,6 +178,13 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/data/quality":
             return self.send_json(data_quality_payload())
 
+        if path == "/api/v1/data/coverage":
+            required_years = float(query.get("required_years", ["5"])[0])
+            return self.send_json(data_coverage_payload(required_years))
+
+        if path == "/api/v1/data/no-future-guard":
+            return self.send_json(no_future_guard_payload())
+
         if path == "/api/v1/catalysts":
             limit = int(query.get("limit", ["100"])[0])
             return self.send_json({"items": list_catalysts(date, limit)})
@@ -260,6 +269,12 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/snapshots/status":
             return self.send_json(snapshot_status(date))
 
+        if path == "/api/v1/backtest/runs":
+            if not self.require_permission("run_backtest"):
+                return
+            limit = int(query.get("limit", ["50"])[0])
+            return self.send_json({"items": list_backtest_runs(limit)})
+
         if path == "/api/v1/audit/logs":
             if not self.require_permission("view_audit"):
                 return
@@ -296,7 +311,12 @@ class RadarHandler(BaseHTTPRequestHandler):
                 body = json.loads(raw)
             except json.JSONDecodeError:
                 return self.send_error_json(400, "Invalid JSON body")
-            result = backtest_result(body)
+            task_id = create_backtest_run(body)
+            try:
+                result = finish_backtest_run(task_id, backtest_result(body))
+            except Exception as exc:
+                fail_backtest_run(task_id, str(exc))
+                return self.send_error_json(500, f"回测失败：{exc}")
             write_audit("backtest_run", method="POST", path=parsed.path, target=result.get("task_id"), detail=result.get("metrics", {}))
             return self.send_json(result)
         if parsed.path == "/api/v1/reviews/save":
