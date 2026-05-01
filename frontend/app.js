@@ -720,6 +720,9 @@ function auditName(type) {
 
 async function runBacktest(event) {
   if (event) event.preventDefault();
+  const target = $("backtestResult");
+  target.style.display = "block";
+  target.textContent = "回测任务已提交，等待后台计算...";
   const result = await fetchJson("/api/v1/backtest/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -729,12 +732,30 @@ async function runBacktest(event) {
       model_version: $("backtestModelVersion").value.trim() || "v1.0-local",
       holding_period: Number($("backtestHolding").value || 3),
       top_n: Number($("backtestTopN").value || 5),
+      async: true,
     }),
   });
   state.backtestResult = result;
-  const target = $("backtestResult");
-  target.style.display = "block";
   target.textContent = formatBacktest(result);
+  if (result.task_id && result.status === "running") {
+    await pollBacktest(result.task_id);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollBacktest(taskId) {
+  const target = $("backtestResult");
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    await sleep(attempt < 10 ? 800 : 2000);
+    const result = await fetchJson(`/api/v1/backtest/runs/${taskId}`);
+    state.backtestResult = result;
+    target.textContent = formatBacktest(result);
+    if (result.status !== "running") return;
+  }
+  target.textContent = `${target.textContent}\n\n任务仍在后台运行，可稍后刷新任务状态。`;
 }
 
 function downloadBacktestCsv() {
@@ -879,7 +900,15 @@ function renderKlineSvg(bars) {
 }
 
 function formatBacktest(result) {
-  if (result.status !== "completed") return JSON.stringify(result, null, 2);
+  if (result.status !== "completed") {
+    const lines = [
+      `状态：${result.status}`,
+      result.task_id ? `任务：${result.task_id}` : null,
+      result.note ? `说明：${result.note}` : null,
+      result.error ? `错误：${result.error}` : null,
+    ].filter(Boolean);
+    return lines.join("\n") || JSON.stringify(result, null, 2);
+  }
   const m = result.metrics;
   const lines = [
     `状态：${result.status}`,
