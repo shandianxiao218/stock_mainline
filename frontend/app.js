@@ -9,6 +9,7 @@ const state = {
   rankingFilter: { confidence: "all", status: "all", riskLevel: "all" },
   rankingLimit: "10",
   matrixLimit: "10",
+  loadToken: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -48,22 +49,18 @@ function sortByDateDesc(items, key = "date") {
 async function loadDashboard() {
   const date = dateValue();
   const period = periodValue();
+  const token = ++state.loadToken;
   $("exportLink").href = `/api/v1/export/themes.xlsx?date=${date}`;
+  $("rankingMeta").textContent = "榜单加载中";
+  $("matrixMeta").textContent = "矩阵加载中";
 
-  const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, alerts] = await Promise.all([
+  const [ranking, quality, modelConfig, roles] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}&limit=${rankingLimitValue()}`),
-    fetchJson(`/api/v1/themes/matrix?date=${date}&days=20&limit=${matrixLimitValue()}`),
-    fetchJson(`/api/v1/reports/daily?date=${date}`),
-    fetchJson(`/api/v1/portfolio/risk?date=${date}`),
     fetchJson("/api/v1/data/quality"),
     fetchJson("/api/v1/model/config"),
-    fetchJson(`/api/v1/factors/effectiveness?date=${date}&holding_period=3`),
-    fetchJson(`/api/v1/confidence/history?date=${date}&days=20`),
-    fetchJson("/api/v1/audit/logs?limit=80"),
     fetchJson("/api/v1/auth/roles"),
-    fetchJson(`/api/v1/catalysts?date=${date}&limit=50`),
-    fetchJson(`/api/v1/alerts?date=${date}`),
   ]);
+  if (token !== state.loadToken) return;
 
   state.ranking = ranking;
   state.modelConfig = modelConfig;
@@ -71,26 +68,43 @@ async function loadDashboard() {
   state.matrixLimit = matrixLimitValue();
   renderOverview(ranking);
   renderRanking(ranking.items);
-  renderMatrix(matrix);
-  renderReport(report);
-  renderPortfolio(portfolio);
   renderQuality(quality);
   renderModelConfig(modelConfig);
   renderBacktestDefaults(modelConfig);
-  renderFactors(factors);
-  renderConfidenceHistory(ranking, confidenceHistory);
-  renderAudit(audit);
   renderRoles(roles);
-  renderCatalysts(catalysts);
-  renderAlerts(alerts);
   loadDataSourceStatus();
 
   const firstTheme = ranking.items[0];
   if (firstTheme) {
-    await selectTheme(state.selectedThemeId || firstTheme.theme_id);
+    selectTheme(state.selectedThemeId || firstTheme.theme_id).catch((error) => {
+      $("detailStatus").textContent = `详情加载失败：${error.message}`;
+    });
   }
   if (!$("sectors").classList.contains("is-hidden")) {
-    await loadSectors();
+    loadSectors().catch((error) => {
+      $("sectorMeta").textContent = `真实板块加载失败：${error.message}`;
+    });
+  }
+
+  loadDashboardModule(token, fetchJson(`/api/v1/themes/matrix?date=${date}&days=20&limit=${matrixLimitValue()}`), renderMatrix, (error) => {
+    $("matrixMeta").textContent = `矩阵加载失败：${error.message}`;
+  });
+  loadDashboardModule(token, fetchJson(`/api/v1/reports/daily?date=${date}`), renderReport);
+  loadDashboardModule(token, fetchJson(`/api/v1/portfolio/risk?date=${date}`), renderPortfolio);
+  loadDashboardModule(token, fetchJson(`/api/v1/factors/effectiveness?date=${date}&holding_period=3`), renderFactors);
+  loadDashboardModule(token, fetchJson(`/api/v1/confidence/history?date=${date}&days=20`), (payload) => renderConfidenceHistory(ranking, payload));
+  loadDashboardModule(token, fetchJson("/api/v1/audit/logs?limit=80"), renderAudit);
+  loadDashboardModule(token, fetchJson(`/api/v1/catalysts?date=${date}&limit=50`), renderCatalysts);
+  loadDashboardModule(token, fetchJson(`/api/v1/alerts?date=${date}`), renderAlerts);
+}
+
+async function loadDashboardModule(token, promise, render, onError) {
+  try {
+    const payload = await promise;
+    if (token === state.loadToken) render(payload);
+  } catch (error) {
+    console.error(error);
+    if (token === state.loadToken && onError) onError(error);
   }
 }
 
