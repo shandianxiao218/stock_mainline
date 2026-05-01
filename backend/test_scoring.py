@@ -62,22 +62,26 @@ class RealScoringSmokeTest(unittest.TestCase):
                 self.assertIn("basis", row)
                 self.assertIn("formula", row)
 
-    def test_no_limit_theme_does_not_get_short_emotion_floor(self) -> None:
+    def test_no_limit_sector_does_not_get_short_emotion_floor(self) -> None:
         payload = ranking_payload("2026-04-29", "short")
-        medicine = next(item for item in payload["items"] if item["theme_name"] == "医药复苏")
-        detail = detail_payload(medicine["theme_id"], "2026-04-29")
+        target = next(
+            item for item in payload["items"]
+            if item["sectors"][0]["stats"].get("limit_count", 0) == 0
+        )
+        detail = detail_payload(target["theme_id"], "2026-04-29")
         stats = detail["sectors"][0]["stats"]
         self.assertEqual(stats["limit_count"], 0)
         short_emotion = next(row for row in detail["factor_contribution"]["heat"] if row["name"] == "涨停与短线情绪")
         self.assertLess(short_emotion["score"], 10)
 
-    def test_default_theme_components_use_eastmoney_real_sectors(self) -> None:
+    def test_default_theme_components_use_dynamic_eastmoney_sectors(self) -> None:
         payload = ranking_payload("2026-04-29", "short")
-        medicine = next(item for item in payload["items"] if item["theme_name"] == "医药复苏")
-        detail = detail_payload(medicine["theme_id"], "2026-04-29")
-        self.assertGreater(len(detail["stock_metrics"]), 100)
+        self.assertFalse(any(item["theme_id"].startswith("theme_ai_compute") for item in payload["items"]))
+        self.assertFalse(any(item["theme_id"].startswith("theme_resource_price") for item in payload["items"]))
+        detail = detail_payload(payload["items"][0]["theme_id"], "2026-04-29")
+        self.assertGreater(len(detail["stock_metrics"]), 5)
         sources = {sector["stats"]["universe_source"] for sector in detail["sectors"]}
-        self.assertEqual(sources, {"eastmoney_auto"})
+        self.assertEqual(sources, {"eastmoney_dynamic"})
 
     def test_eastmoney_stock_names_are_real_names(self) -> None:
         with sqlite3.connect(DB_PATH) as conn:

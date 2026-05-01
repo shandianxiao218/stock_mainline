@@ -537,6 +537,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "theme_universe": "当前为本地配置样例成分，不是完整东方财富板块",
         "eastmoney_mapping": "来自本地主线-东方财富板块映射",
         "eastmoney_auto": "来自内置主线-东方财富真实板块自动映射",
+        "eastmoney_dynamic": "来自东方财富真实板块当日自动候选",
     }
     raw = {
         **sector,
@@ -839,14 +840,39 @@ def factor_contribution(cluster: list[SectorScore]) -> dict[str, Any]:
     }
 
 
-def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def _theme_id_from_sector_code(sector_code: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in sector_code)
+    return f"theme_{safe}"
+
+
+def _category_from_sector_code(sector_code: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in sector_code)
+    return f"em_{safe}"
+
+
+def _sector_stocks(conn: sqlite3.Connection, sector_code: str) -> list[tuple[str, str]]:
+    rows = conn.execute(
+        """
+        select c.symbol, coalesce(s.name, c.symbol)
+        from em_sector_constituent_history c
+        left join em_stock s on s.symbol = c.symbol
+        where c.sector_code = ?
+        group by c.symbol
+        order by c.symbol
+        """,
+        (sector_code,),
+    ).fetchall()
+    return [(r[0], r[1]) for r in rows]
+
+
+def load_real_sectors(conn: sqlite3.Connection, trade_date: int) -> list[dict[str, Any]]:
     """从 SQLite 加载东方财富真实板块成分，格式与 THEME_SECTORS 兼容。
 
     优先使用 local_theme + local_theme_sector_mapping 定义的主线-板块映射；
-    若无映射，则使用内置主线到东方财富板块代码的受控映射。
+    若无映射，则按当日行情从东方财富真实板块中选取候选。
 
-    不能在无映射时直接把 em_sector 的 1000+ 个板块全部送入评分引擎。
-    默认映射只选取每条主线相关的真实东方财富板块，避免近 20 日矩阵和回测超时。
+    不能在无映射时直接把 em_sector 的 1000+ 个板块全部送入评分引擎；
+    这里先用成交额、涨幅、广度、涨停近似做轻量候选筛选，再交给正式评分模型。
     """
     # 检查是否有主线映射
     theme_rows = conn.execute(
@@ -868,17 +894,7 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                 (theme_id,),
             ).fetchall()
             for sector_code, branch, sector_name in mappings:
-                stocks = conn.execute(
-                    """
-                    select c.symbol, coalesce(s.name, c.symbol)
-                    from em_sector_constituent_history c
-                    left join em_stock s on s.symbol = c.symbol
-                    where c.sector_code = ?
-                    group by c.symbol
-                    order by c.symbol
-                    """,
-                    (sector_code,),
-                ).fetchall()
+                stocks = _sector_stocks(conn, sector_code)
                 if stocks:
                     sectors.append({
                         "sector_id": sector_code,
@@ -887,51 +903,90 @@ def load_real_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
                         "category": category,
                         "theme_name": theme_name,
                         "keywords": [theme_name, sector_name],
-                        "stocks": [(r[0], r[1]) for r in stocks],
+                        "stocks": stocks,
                         "catalysts": [],
                         "universe_source": "eastmoney_mapping",
                     })
         return sectors
 
-    return load_default_real_theme_sectors(conn)
+    return load_dynamic_real_sectors(conn, trade_date)
 
 
-def load_default_real_theme_sectors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def load_dynamic_real_sectors(conn: sqlite3.Connection, trade_date: int, limit: int = 50) -> list[dict[str, Any]]:
+    prev_date = prev_trade_date(conn, trade_date)
+    if not prev_date:
+        return []
+    trade_date_s = date_text(trade_date)
+    rows = conn.execute(
+        """
+        select s.sector_code,
+               s.sector_name,
+               s.source,
+               count(distinct c.symbol) as stock_count,
+               coalesce(sum(q.amount), 0) as sector_amount,
+               avg(case when p.close > 0 then (q.close - p.close) / p.close else 0 end) as avg_pct,
+               avg(case when p.close > 0 and q.close > p.close then 1.0 else 0.0 end) as up_ratio,
+               sum(case when l.sealed_limit = 1 then 1 else 0 end) as limit_count
+        from em_sector s
+        join em_sector_constituent_history c on c.sector_code = s.sector_code
+        join em_daily_quote q on q.symbol = c.symbol and q.trade_date = ?
+        left join em_daily_quote p on p.symbol = c.symbol and p.trade_date = ?
+        left join local_limit_signal_daily l on l.symbol = c.symbol and l.trade_date = ?
+        where s.sector_name not like '%板块'
+          and s.sector_name not like '%指数%'
+          and s.sector_name not like '%融资融券%'
+          and s.sector_name not like '%深股通%'
+          and s.sector_name not like '%沪股通%'
+          and s.sector_name not like '%上证%'
+          and s.sector_name not like '%中证%'
+          and s.sector_name not like '%大盘%'
+          and s.sector_name not like '%小盘%'
+          and s.sector_name not like '%权重股%'
+          and s.sector_name not like '%股权激励%'
+          and s.sector_name not like '%机构%'
+          and s.sector_name not like '%基金%'
+          and s.sector_name not like '%创业板%'
+          and s.sector_name not like '%深证%'
+          and s.sector_name not like '%昨日%'
+          and s.sector_name not like '%涨停%'
+          and s.sector_name not like '%首板%'
+          and s.sector_name not like '%多板%'
+          and s.sector_name not like '%新高%'
+          and s.sector_name not like '%热股%'
+          and s.sector_name not like '%行业龙头%'
+          and s.sector_name not like '%破净%'
+          and s.sector_name not like '%预亏%'
+          and s.sector_name not like '%预增%'
+        group by s.sector_code, s.sector_name, s.source
+        having stock_count between 5 and 350
+        order by
+          (sector_amount / 100000000.0) * 0.35
+          + coalesce(avg_pct, 0) * 100 * 0.35
+          + coalesce(up_ratio, 0) * 20 * 0.20
+          + coalesce(limit_count, 0) * 2.0 desc
+        limit ?
+        """,
+        (trade_date, prev_date, trade_date_s, limit),
+    ).fetchall()
+
     sectors: list[dict[str, Any]] = []
-    for theme in REAL_THEME_SECTOR_MAP:
-        for sector_code, branch in theme["sectors"]:
-            row = conn.execute(
-                "select sector_name, source from em_sector where sector_code = ?",
-                (sector_code,),
-            ).fetchone()
-            if not row:
-                continue
-            sector_name, source = row
-            stocks = conn.execute(
-                """
-                select c.symbol, coalesce(s.name, c.symbol)
-                from em_sector_constituent_history c
-                left join em_stock s on s.symbol = c.symbol
-                where c.sector_code = ?
-                group by c.symbol
-                order by c.symbol
-                """,
-                (sector_code,),
-            ).fetchall()
-            if not stocks:
-                continue
-            sectors.append({
-                "sector_id": sector_code,
-                "sector_name": sector_name,
-                "branch": branch or sector_name,
-                "category": theme["category"],
-                "theme_name": theme["theme_name"],
-                "keywords": [theme["theme_name"], sector_name, branch],
-                "stocks": [(r[0], r[1]) for r in stocks],
-                "catalysts": [],
-                "universe_source": "eastmoney_auto",
-                "source": source,
-            })
+    for sector_code, sector_name, source, *_metrics in rows:
+        stocks = _sector_stocks(conn, sector_code)
+        if not stocks:
+            continue
+        sectors.append({
+            "theme_id": _theme_id_from_sector_code(sector_code),
+            "sector_id": sector_code,
+            "sector_name": sector_name,
+            "branch": sector_name,
+            "category": _category_from_sector_code(sector_code),
+            "theme_name": sector_name,
+            "keywords": [sector_name],
+            "stocks": stocks,
+            "catalysts": [],
+            "universe_source": "eastmoney_dynamic",
+            "source": source,
+        })
     return sectors
 
 
@@ -941,7 +996,7 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
         trade_date = resolve_trade_date(conn, date)
         market = build_market_snapshot(conn, trade_date)
         # 优先使用真实板块数据，回退到人工主题配置
-        sector_list = load_real_sectors(conn)
+        sector_list = load_real_sectors(conn, trade_date)
         if not sector_list:
             sector_list = [{**sector, "universe_source": "theme_universe"} for sector in THEME_SECTORS]
         scored = [score_sector_from_db(conn, sector, trade_date, market["market_amount"]) for sector in sector_list]
@@ -971,9 +1026,10 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
         stock_metrics = sorted(stock_metrics_by_symbol.values(), key=lambda row: row["amount"], reverse=True)
         core_stocks = [stock["name"] for stock in stock_metrics[:10]]
         theme_name = cluster[0].raw.get("theme_name") or CATEGORY_LABELS.get(category, cluster[0].raw["sector_name"])
+        theme_id = cluster[0].raw.get("theme_id") or f"theme_{category}_{idx}"
 
         themes.append({
-            "theme_id": f"theme_{category}_{idx}",
+            "theme_id": theme_id,
             "theme_name": theme_name,
             "theme_score": theme_score,
             "heat_score": heat,
