@@ -108,13 +108,21 @@ except ImportError:
         return {"date": date, "theme_id": theme_id, "days": 0, "items": []}
 
 
-def run_backtest_task(task_id: str, body: dict[str, object]) -> None:
-    try:
-        result = finish_backtest_run(task_id, backtest_result(body))
-        write_audit("backtest_run", method="POST", path="/api/v1/backtest/run", target=task_id, detail=result.get("metrics", {}))
-    except Exception as exc:
-        fail_backtest_run(task_id, str(exc))
-        write_audit("backtest_run_failed", method="POST", path="/api/v1/backtest/run", target=task_id, detail={"error": str(exc)})
+def run_backtest_task(task_id: str, body: dict[str, object], max_retries: int = 2) -> None:
+    """异步执行回测任务，失败时最多重试 max_retries 次。"""
+    import time as _time
+    last_error = ""
+    for attempt in range(1 + max_retries):
+        try:
+            result = finish_backtest_run(task_id, backtest_result(body))
+            write_audit("backtest_run", method="POST", path="/api/v1/backtest/run", target=task_id, detail=result.get("metrics", {}))
+            return
+        except Exception as exc:
+            last_error = str(exc)
+            if attempt < max_retries:
+                _time.sleep(10)
+    fail_backtest_run(task_id, last_error)
+    write_audit("backtest_run_failed", method="POST", path="/api/v1/backtest/run", target=task_id, detail={"error": last_error})
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -201,6 +209,51 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/data/no-future-guard":
             return self.send_json(no_future_guard_payload())
+
+        if path == "/api/v1/tasks/status":
+            import sqlite3 as _sqlite3
+            _db = CURRENT_DIR / "data" / "radar.db"
+            result: dict[str, Any] = {"snapshots": {}, "backtest": []}
+            with _sqlite3.connect(_db) as conn:
+                # 快照构建日志：最近每种类型的状态
+                rows = conn.execute(
+                    """
+                    select trade_date, snapshot_type, status, message, created_at
+                    from local_snapshot_build_log
+                    where id in (
+                        select max(id) from local_snapshot_build_log group by trade_date, snapshot_type
+                    )
+                    order by created_at desc
+                    limit 30
+                    """
+                ).fetchall()
+                for r in rows:
+                    key = f"{r[0]}:{r[1]}"
+                    result["snapshots"][key] = {
+                        "trade_date": r[0],
+                        "type": r[1],
+                        "status": r[2],
+                        "message": r[3],
+                        "created_at": r[4],
+                    }
+                # 最近回测任务
+                bt_rows = conn.execute(
+                    """
+                    select task_id, status, error, started_at, finished_at
+                    from local_backtest_run
+                    order by started_at desc
+                    limit 10
+                    """
+                ).fetchall()
+                for r in bt_rows:
+                    result["backtest"].append({
+                        "task_id": r[0],
+                        "status": r[1],
+                        "error": r[2],
+                        "started_at": r[3],
+                        "finished_at": r[4],
+                    })
+            return self.send_json(result)
 
         if path == "/api/v1/catalysts":
             limit = int(query.get("limit", ["100"])[0])
