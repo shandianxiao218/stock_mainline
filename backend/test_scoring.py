@@ -286,5 +286,72 @@ class CatalystScoringTest(unittest.TestCase):
         self.assertGreater(strength, 30)
 
 
+class ClusterStoreTest(unittest.TestCase):
+    """自动聚合结果版本化测试。"""
+
+    def setUp(self) -> None:
+        import sqlite3
+        from cluster_store import init_schema
+        self._conn = sqlite3.connect(":memory:")
+        init_schema(self._conn)
+
+    def tearDown(self) -> None:
+        self._conn.close()
+
+    def test_save_and_load_clusters(self) -> None:
+        """保存后可按日期加载。"""
+        from cluster_store import save_clusters, load_clusters
+        clusters = [
+            {
+                "cluster_name": "半导体",
+                "sector_codes": ["BK1036", "BK1082"],
+                "sector_names": ["半导体", "芯片"],
+                "core_stocks": ["中芯国际", "北方华创"],
+                "generation_reason": "自动聚合：半导体, 芯片",
+            }
+        ]
+        version = save_clusters(self._conn, "2026-04-29", clusters)
+        self.assertEqual(version, 1)
+        loaded = load_clusters(self._conn, "2026-04-29")
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(loaded[0]["cluster_name"], "半导体")
+        self.assertEqual(loaded[0]["sector_codes"], ["BK1036", "BK1082"])
+        self.assertEqual(loaded[0]["cluster_version"], 1)
+
+    def test_version_auto_increment(self) -> None:
+        """同日重复执行时版本号自增。"""
+        from cluster_store import save_clusters, load_clusters
+        save_clusters(self._conn, "2026-04-29", [
+            {"cluster_name": "AI", "sector_codes": ["BK001"], "sector_names": ["AI概念"]},
+        ])
+        v2 = save_clusters(self._conn, "2026-04-29", [
+            {"cluster_name": "AI", "sector_codes": ["BK001", "BK002"], "sector_names": ["AI概念", "算力"]},
+        ])
+        self.assertEqual(v2, 2)
+        loaded = load_clusters(self._conn, "2026-04-29", version=2)
+        self.assertEqual(len(loaded[0]["sector_codes"]), 2)
+
+    def test_load_nonexistent_date(self) -> None:
+        """不存在的日期返回空列表。"""
+        from cluster_store import load_clusters
+        loaded = load_clusters(self._conn, "2020-01-01")
+        self.assertEqual(loaded, [])
+
+    def test_list_cluster_dates(self) -> None:
+        """列出有聚合记录的日期。"""
+        from cluster_store import save_clusters, list_cluster_dates
+        save_clusters(self._conn, "2026-04-28", [
+            {"cluster_name": "A", "sector_codes": ["BK001"]},
+        ])
+        save_clusters(self._conn, "2026-04-29", [
+            {"cluster_name": "B", "sector_codes": ["BK002"]},
+            {"cluster_name": "C", "sector_codes": ["BK003"]},
+        ])
+        dates = list_cluster_dates(self._conn)
+        self.assertEqual(len(dates), 2)
+        self.assertEqual(dates[0]["cluster_date"], "2026-04-29")
+        self.assertEqual(dates[0]["cluster_count"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

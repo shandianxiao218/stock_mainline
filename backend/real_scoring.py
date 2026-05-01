@@ -13,6 +13,7 @@ from theme_universe import CATEGORY_LABELS, PORTFOLIO, THEME_SECTORS, WATCHLIST
 from model_config_store import get_active_config, save_config
 from sentiment_store import proxy_sentiment_scores, is_overheated, price_sentiment_divergence
 from catalyst_store import get_catalysts_for_scoring, compute_catalyst_score
+from cluster_store import save_clusters, load_clusters
 
 try:
     from watchlist_store import list_positions, list_watchlist
@@ -1002,6 +1003,31 @@ def load_dynamic_real_sectors(conn: sqlite3.Connection, trade_date: int, limit: 
     return sectors
 
 
+def _persist_clusters(date: str, clusters: list[list[SectorScore]]) -> None:
+    """将自动聚合结果版本化保存到 local_auto_theme_cluster。"""
+    cluster_date = date if "-" in date else f"{date[:4]}-{date[4:6]}-{date[6:8]}"
+    records: list[dict[str, Any]] = []
+    for cluster in clusters:
+        sector_codes = [item.raw["sector_id"] for item in cluster]
+        sector_names = [item.raw["sector_name"] for item in cluster]
+        core_stocks: list[str] = []
+        for item in cluster:
+            core_stocks.extend(item.raw.get("core_stocks", []))
+        core_stocks = list(dict.fromkeys(core_stocks))[:20]  # 去重保留前 20
+        # 生成原因：描述聚类包含的板块
+        reason = f"自动聚合：{', '.join(sector_names[:5])}"
+        records.append({
+            "cluster_name": cluster[0].raw.get("theme_name") or cluster[0].raw["sector_name"],
+            "sector_codes": sector_codes,
+            "sector_names": sector_names,
+            "core_stocks": core_stocks,
+            "generation_reason": reason,
+        })
+    if records:
+        with sqlite3.connect(DB_PATH) as conn:
+            save_clusters(conn, cluster_date, records)
+
+
 @lru_cache(maxsize=256)
 def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     with sqlite3.connect(DB_PATH) as conn:
@@ -1013,6 +1039,8 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
             sector_list = [{**sector, "universe_source": "theme_universe"} for sector in THEME_SECTORS]
         scored = [score_sector_from_db(conn, sector, trade_date, market["market_amount"]) for sector in sector_list]
     clusters = aggregate_sectors(scored)
+    # 自动聚合结果版本化落库
+    _persist_clusters(date, clusters)
     themes: list[dict[str, Any]] = []
     for idx, cluster in enumerate(clusters, start=1):
         cluster = sorted(cluster, key=lambda item: item.composite_score, reverse=True)

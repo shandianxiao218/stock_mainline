@@ -26,6 +26,7 @@ from backtest_store import (
     list_backtest_runs,
 )
 from catalyst_store import add_catalyst, list_catalysts
+from cluster_store import load_clusters, list_cluster_dates
 from data_quality import data_quality_payload
 from data_validation import data_coverage_payload, no_future_guard_payload
 from model_config_store import get_active_config, list_configs, save_config
@@ -236,6 +237,20 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/v1/themes/manage/") and path.endswith("/history"):
             theme_id = unquote(path.split("/")[4])
             return self.send_json({"theme_id": theme_id, "items": theme_history(theme_id)})
+
+        # 自动聚合结果查询
+        if path == "/api/v1/themes/auto-clusters":
+            import sqlite3 as _sqlite3
+            date_param = query.get("date", [""])[0]
+            version_param = query.get("version", [None])[0]
+            version = int(version_param) if version_param else None
+            _db = CURRENT_DIR / "data" / "radar.db"
+            with _sqlite3.connect(_db) as conn:
+                if date_param:
+                    items = load_clusters(conn, date_param, version)
+                else:
+                    items = list_cluster_dates(conn)
+            return self.send_json({"items": items})
 
         if path == "/api/v1/custom-sectors" and method == "GET":
             return self.send_json({"items": list_custom_sectors()})
