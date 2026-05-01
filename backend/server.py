@@ -62,7 +62,7 @@ except ImportError:
     def clear_scoring_cache() -> None:
         return None
 
-    def theme_matrix_payload(date: str, days: int = 20) -> dict[str, object]:
+    def theme_matrix_payload(date: str, days: int = 20, limit: int | None = 10) -> dict[str, object]:
         return {"date": date, "dates": [], "items": []}
 
     def kline_payload(symbol: str, date: str, window: int = 80) -> dict[str, object]:
@@ -201,7 +201,9 @@ class RadarHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v1/themes/matrix":
             days = int(query.get("days", ["20"])[0])
-            return self.send_json(theme_matrix_payload(date, days))
+            limit_arg = query.get("limit", ["10"])[0]
+            limit = None if limit_arg == "all" else int(limit_arg)
+            return self.send_json(theme_matrix_payload(date, days, limit))
 
         if path == "/api/v1/confidence/history":
             days = int(query.get("days", ["20"])[0])
@@ -476,7 +478,7 @@ class RadarHandler(BaseHTTPRequestHandler):
             pd.DataFrame([ranking["components"]]).to_excel(writer, index=False, sheet_name="置信度")
             report = daily_report(date)
             pd.DataFrame([{"日期": report["date"], "复盘": report["report"]}]).to_excel(writer, index=False, sheet_name="复盘报告")
-            matrix = theme_matrix_payload(date, 20)
+            matrix = theme_matrix_payload(date, 20, None)
             matrix_rows = []
             for item in matrix["items"]:
                 row = {"主线": item["theme_name"]}

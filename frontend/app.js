@@ -7,6 +7,7 @@ const state = {
   sectorsLoaded: false,
   stockSort: { key: "amount", direction: "desc" },
   rankingFilter: { confidence: "all", status: "all", riskLevel: "all" },
+  matrixLimit: "10",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +28,10 @@ function periodValue() {
   return $("periodInput").value || "short";
 }
 
+function matrixLimitValue() {
+  return $("matrixLimit") ? $("matrixLimit").value : state.matrixLimit;
+}
+
 function sortByDateDesc(items, key = "date") {
   const valueOf = (item) => {
     if (item && typeof item === "object") return String(item[key] || "");
@@ -42,7 +47,7 @@ async function loadDashboard() {
 
   const [ranking, matrix, report, portfolio, quality, modelConfig, factors, confidenceHistory, audit, roles, catalysts, alerts] = await Promise.all([
     fetchJson(`/api/v1/themes/ranking?date=${date}&period=${period}`),
-    fetchJson(`/api/v1/themes/matrix?date=${date}&days=20`),
+    fetchJson(`/api/v1/themes/matrix?date=${date}&days=20&limit=${matrixLimitValue()}`),
     fetchJson(`/api/v1/reports/daily?date=${date}`),
     fetchJson(`/api/v1/portfolio/risk?date=${date}`),
     fetchJson("/api/v1/data/quality"),
@@ -57,6 +62,7 @@ async function loadDashboard() {
 
   state.ranking = ranking;
   state.modelConfig = modelConfig;
+  state.matrixLimit = matrixLimitValue();
   renderOverview(ranking);
   renderRanking(ranking.items);
   renderMatrix(matrix);
@@ -127,7 +133,9 @@ function renderRoles(payload) {
 
 function renderMatrix(matrix) {
   const dates = sortByDateDesc(matrix.dates);
-  $("matrixMeta").textContent = `${matrix.dates.length} 个交易日`;
+  const shown = matrix.items.length;
+  const total = matrix.row_limit === "all" ? matrix.total_count : matrix.target_count;
+  $("matrixMeta").textContent = `${matrix.dates.length} 个交易日 / ${shown} / ${total || shown} 个板块`;
   $("matrixHead").innerHTML = `
     <tr>
       <th>主线</th>
@@ -145,6 +153,12 @@ function renderMatrix(matrix) {
       }).join("")}
     </tr>
   `).join("");
+}
+
+async function loadMatrixOnly() {
+  state.matrixLimit = matrixLimitValue();
+  const matrix = await fetchJson(`/api/v1/themes/matrix?date=${dateValue()}&days=20&limit=${state.matrixLimit}`);
+  renderMatrix(matrix);
 }
 
 function renderSectors(payload) {
@@ -876,6 +890,11 @@ function formatIc(value) {
 $("refreshBtn").addEventListener("click", loadDashboard);
 $("dateInput").addEventListener("change", loadDashboard);
 $("periodInput").addEventListener("change", loadDashboard);
+$("matrixLimit").addEventListener("change", () => {
+  loadMatrixOnly().catch((error) => {
+    $("matrixMeta").textContent = `矩阵加载失败：${error.message}`;
+  });
+});
 $("backtestForm").addEventListener("submit", runBacktest);
 $("downloadBacktestBtn").addEventListener("click", downloadBacktestCsv);
 $("saveReviewBtn").addEventListener("click", saveReview);

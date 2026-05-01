@@ -182,7 +182,18 @@
               <p class="eyebrow">Matrix</p>
               <h3>近20日主线矩阵</h3>
             </div>
-            <span id="matrixMeta"></span>
+            <div class="matrix-controls">
+              <label for="matrixLimit">显示</label>
+              <select id="matrixLimit" aria-label="矩阵显示数量">
+                <option value="10" selected>前10</option>
+                <option value="20">前20</option>
+                <option value="30">前30</option>
+                <option value="50">前50</option>
+                <option value="100">前100</option>
+                <option value="all">全部</option>
+              </select>
+              <span id="matrixMeta"></span>
+            </div>
           </div>
           <div class="matrix-wrap">
             <table class="matrix-table">

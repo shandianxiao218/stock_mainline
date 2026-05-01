@@ -912,7 +912,7 @@ def load_real_sectors(conn: sqlite3.Connection, trade_date: int) -> list[dict[st
     return load_dynamic_real_sectors(conn, trade_date)
 
 
-def load_dynamic_real_sectors(conn: sqlite3.Connection, trade_date: int, limit: int = 50) -> list[dict[str, Any]]:
+def load_dynamic_real_sectors(conn: sqlite3.Connection, trade_date: int, limit: int = 100) -> list[dict[str, Any]]:
     prev_date = prev_trade_date(conn, trade_date)
     if not prev_date:
         return []
@@ -1115,8 +1115,10 @@ def ranking_payload(date: str, period: str = "short") -> dict[str, Any]:
     return {"date": market["date"], "requested_date": date, "period": period, "market": market, "model_config": get_active_config(), **conf, "items": themes}
 
 
-def theme_matrix_payload(date: str, days: int = 20) -> dict[str, Any]:
+def theme_matrix_payload(date: str, days: int = 20, limit: int | None = 10) -> dict[str, Any]:
     days = max(1, min(days, 60))
+    if limit is not None:
+        limit = max(1, min(int(limit), 500))
     with sqlite3.connect(DB_PATH) as conn:
         trade_date = resolve_trade_date(conn, date)
         rows = conn.execute(
@@ -1130,6 +1132,7 @@ def theme_matrix_payload(date: str, days: int = 20) -> dict[str, Any]:
             (trade_date, days),
         ).fetchall()
     dates = [date_text(row[0]) for row in reversed(rows)]
+    target_date = dates[-1] if dates else date
     matrix: dict[str, dict[str, Any]] = {}
     for day in dates:
         themes, _market = build_themes_for_date(day)
@@ -1150,12 +1153,30 @@ def theme_matrix_payload(date: str, days: int = 20) -> dict[str, Any]:
                 "risk_penalty": theme["risk_penalty"],
                 "status": theme["status"],
             }
-    rows_out = sorted(
-        matrix.values(),
-        key=lambda row: row["cells"].get(dates[-1], {}).get("theme_score", -999),
+    all_rows = list(matrix.values())
+    rows_with_target = [row for row in all_rows if target_date in row["cells"]]
+    rows_without_target = [row for row in all_rows if target_date not in row["cells"]]
+
+    rows_with_target.sort(key=lambda row: row["cells"][target_date]["rank"])
+    rows_without_target.sort(
+        key=lambda row: (
+            len(row["cells"]),
+            max((cell["theme_score"] for cell in row["cells"].values()), default=-999),
+        ),
         reverse=True,
     )
-    return {"date": dates[-1] if dates else date, "dates": dates, "items": rows_out}
+    rows_out = rows_with_target if limit is not None else [*rows_with_target, *rows_without_target]
+    if limit is not None:
+        rows_out = rows_out[:limit]
+
+    return {
+        "date": target_date,
+        "dates": dates,
+        "row_limit": "all" if limit is None else limit,
+        "total_count": len(all_rows),
+        "target_count": len(rows_with_target),
+        "items": rows_out,
+    }
 
 
 def confidence_history_payload(date: str, days: int = 20) -> dict[str, Any]:

@@ -414,6 +414,19 @@ button.secondary,
   overflow-x: auto;
 }
 
+.matrix-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.matrix-controls select {
+  min-width: 92px;
+  padding: 7px 9px;
+}
+
 .sector-browser {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr);

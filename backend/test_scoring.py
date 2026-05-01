@@ -43,6 +43,15 @@ class RealScoringSmokeTest(unittest.TestCase):
         matrix = theme_matrix_payload("2026-04-29", 20)
         self.assertGreaterEqual(len(matrix["dates"]), 1)
         self.assertGreaterEqual(len(matrix["items"]), 1)
+        self.assertLessEqual(len(matrix["items"]), 10)
+        target_date = matrix["date"]
+        for item in matrix["items"]:
+            self.assertIn(target_date, item["cells"])
+
+    def test_theme_matrix_supports_all_rows(self) -> None:
+        matrix = theme_matrix_payload("2026-04-29", 20, None)
+        self.assertEqual(matrix["row_limit"], "all")
+        self.assertGreaterEqual(matrix["total_count"], len(matrix["items"]))
 
     def test_factor_effectiveness_returns_items(self) -> None:
         payload = factor_effectiveness_payload("2026-04-29", 3)
