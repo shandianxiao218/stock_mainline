@@ -135,3 +135,31 @@ def list_backtest_runs(limit: int = 50) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+def get_backtest_run(task_id: str) -> dict[str, Any] | None:
+    with _conn() as conn:
+        init_backtest_schema(conn)
+        row = conn.execute(
+            """
+            select task_id, status, request_json, metrics_json, samples_json, note, error,
+                   started_at, finished_at, result_file
+            from local_backtest_run
+            where task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "task_id": row["task_id"],
+        "status": row["status"],
+        "request": json.loads(row["request_json"] or "{}"),
+        "metrics": json.loads(row["metrics_json"] or "{}"),
+        "samples": json.loads(row["samples_json"] or "[]"),
+        "note": row["note"],
+        "error": row["error"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "result_file": row["result_file"],
+    }

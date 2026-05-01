@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
@@ -17,7 +18,13 @@ sys.path.insert(0, str(CURRENT_DIR))
 
 from eastmoney_data import eastmoney_status
 from audit_store import list_audit_logs, write_audit
-from backtest_store import create_backtest_run, fail_backtest_run, finish_backtest_run, list_backtest_runs
+from backtest_store import (
+    create_backtest_run,
+    fail_backtest_run,
+    finish_backtest_run,
+    get_backtest_run,
+    list_backtest_runs,
+)
 from catalyst_store import add_catalyst, list_catalysts
 from data_quality import data_quality_payload
 from data_validation import data_coverage_payload, no_future_guard_payload
@@ -98,6 +105,15 @@ except ImportError:
 
     def risk_history_payload(theme_id: str, date: str, days: int = 20) -> dict[str, object]:
         return {"date": date, "theme_id": theme_id, "days": 0, "items": []}
+
+
+def run_backtest_task(task_id: str, body: dict[str, object]) -> None:
+    try:
+        result = finish_backtest_run(task_id, backtest_result(body))
+        write_audit("backtest_run", method="POST", path="/api/v1/backtest/run", target=task_id, detail=result.get("metrics", {}))
+    except Exception as exc:
+        fail_backtest_run(task_id, str(exc))
+        write_audit("backtest_run_failed", method="POST", path="/api/v1/backtest/run", target=task_id, detail={"error": str(exc)})
 
 
 class RadarHandler(BaseHTTPRequestHandler):
@@ -275,6 +291,13 @@ class RadarHandler(BaseHTTPRequestHandler):
             limit = int(query.get("limit", ["50"])[0])
             return self.send_json({"items": list_backtest_runs(limit)})
 
+        if path.startswith("/api/v1/backtest/runs/"):
+            if not self.require_permission("run_backtest"):
+                return
+            task_id = unquote(path.split("/")[5])
+            run = get_backtest_run(task_id)
+            return self.send_json(run) if run else self.send_error_json(404, "Backtest run not found")
+
         if path == "/api/v1/audit/logs":
             if not self.require_permission("view_audit"):
                 return
@@ -312,6 +335,11 @@ class RadarHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 return self.send_error_json(400, "Invalid JSON body")
             task_id = create_backtest_run(body)
+            is_async = bool(body.get("async")) or query.get("async", ["0"])[0] in ("1", "true", "yes")
+            if is_async:
+                worker = threading.Thread(target=run_backtest_task, args=(task_id, body), daemon=True)
+                worker.start()
+                return self.send_json({"task_id": task_id, "status": "running", "request": body})
             try:
                 result = finish_backtest_run(task_id, backtest_result(body))
             except Exception as exc:
