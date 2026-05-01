@@ -102,6 +102,13 @@ def init_snapshot_schema(conn: sqlite3.Connection | None = None) -> None:
                 created_at text not null
             );
 
+            create table if not exists local_backtest_daily_snapshot (
+                trade_date text not null primary key,
+                themes_json text not null,
+                theme_count integer not null default 0,
+                created_at text not null
+            );
+
             """
         )
         optional_indexes = [
@@ -384,3 +391,44 @@ def snapshot_status(date: str) -> dict[str, Any]:
                 "ready": bool(row["count"]),
             })
     return {"date": resolved, "items": items}
+
+
+# --- 回测日度快照 ---
+
+def save_backtest_daily_snapshot(trade_date: str, themes: list[dict[str, Any]]) -> None:
+    """保存当日回测所需的主题评分和成分股代码。"""
+    light = []
+    for theme in themes:
+        symbols = sorted({stock["symbol"] for stock in theme.get("stock_metrics", [])})
+        light.append({
+            "theme_id": theme.get("theme_id"),
+            "theme_name": theme.get("theme_name"),
+            "theme_score": theme.get("theme_score"),
+            "heat_score": theme.get("heat_score"),
+            "continuation_score": theme.get("continuation_score"),
+            "risk_penalty": theme.get("risk_penalty"),
+            "symbols": symbols,
+        })
+    with connect() as conn:
+        init_snapshot_schema(conn)
+        conn.execute(
+            """
+            insert or replace into local_backtest_daily_snapshot(trade_date, themes_json, theme_count, created_at)
+            values (?, ?, ?, ?)
+            """,
+            (trade_date, json.dumps(light, ensure_ascii=False), len(light), _now_text()),
+        )
+        conn.commit()
+
+
+def load_backtest_daily_snapshot(trade_date: str) -> list[dict[str, Any]] | None:
+    """加载当日回测快照。返回轻量主题列表或 None。"""
+    with connect() as conn:
+        init_snapshot_schema(conn)
+        row = conn.execute(
+            "select themes_json from local_backtest_daily_snapshot where trade_date = ?",
+            (trade_date,),
+        ).fetchone()
+    if not row:
+        return None
+    return json.loads(row["themes_json"] if hasattr(row, "keys") else row[0])

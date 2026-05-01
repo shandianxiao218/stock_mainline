@@ -1459,12 +1459,43 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
         all_future_returns: list[float] = []
         equity = 1.0
         equity_curve = []
+        gap_dates: list[str] = []
+        fallback_count = 0
         for idx, trade_date in enumerate(dates[:-holding_period]):
             exit_date = dates[idx + holding_period]
-            themes, _market = build_themes_for_date(date_text(trade_date))
+            date_str = date_text(trade_date)
+
+            # 优先读取预计算快照
+            from snapshot_store import load_backtest_daily_snapshot, save_backtest_daily_snapshot
+            cached = load_backtest_daily_snapshot(date_str)
+            if cached is not None:
+                theme_items = cached
+                fallback_live = False
+            else:
+                themes_live, _market = build_themes_for_date(date_str)
+                # 保存快照供后续使用
+                save_backtest_daily_snapshot(date_str, themes_live)
+                theme_items = [
+                    {
+                        "theme_id": t.get("theme_id"),
+                        "theme_name": t.get("theme_name"),
+                        "theme_score": t.get("theme_score"),
+                        "heat_score": t.get("heat_score"),
+                        "continuation_score": t.get("continuation_score"),
+                        "risk_penalty": t.get("risk_penalty"),
+                        "symbols": sorted({stock["symbol"] for stock in t.get("stock_metrics", [])}),
+                    }
+                    for t in themes_live
+                ]
+                fallback_live = True
+                fallback_count += 1
+                gap_dates.append(date_str)
+
             theme_returns = []
-            for theme in themes:
-                symbols = sorted({stock["symbol"] for stock in theme.get("stock_metrics", [])})
+            for theme in theme_items:
+                symbols = theme.get("symbols", [])
+                if not symbols:
+                    continue
                 future_return = future_theme_return(conn, symbols, trade_date, exit_date)
                 if future_return is None:
                     continue
@@ -1482,12 +1513,13 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
             equity *= 1 + selected_return
             equity_curve.append(equity)
             samples.append({
-                "trade_date": date_text(trade_date),
+                "trade_date": date_str,
                 "exit_date": date_text(exit_date),
                 "selected_return": selected_return,
                 "benchmark_return": benchmark_return,
                 "excess_return": excess_return,
                 "selected_themes": [theme["theme_name"] for theme, _ret in selected],
+                "fallback_live": fallback_live,
             })
 
     returns = [sample["selected_return"] for sample in samples]
@@ -1511,6 +1543,8 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
         "request": body,
         "metrics": metrics,
         "samples": samples[-20:],
+        "fallback_count": fallback_count,
+        "gap_dates": gap_dates[-20:],
         "note": "回测基于当前 SQLite 可用日线区间逐日重放；不会使用评分日之后的数据计算当日排名。",
     }
 
