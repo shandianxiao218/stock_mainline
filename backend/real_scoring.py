@@ -404,13 +404,17 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     prev_pcts = load_prev_day_pcts(conn, symbols, trade_date)
     relay_metrics = compute_relay_break(metrics, prev_pcts, median_pct)
 
-    # 行情代理舆情评分（SRS 9.7）
-    sentiment = proxy_sentiment_scores(
+    # 增强版舆情评分（SRS 9.7）：行情代理 + 热度排名
+    from sentiment_store import enhanced_sentiment_scores
+    sentiment = enhanced_sentiment_scores(
         sector.get("sector_id", ""),
+        symbols=symbols,
+        trade_date=date_text(trade_date),
         amount=amount,
         amount_ratio=amount_ratio,
         limit_rate=limit_rate,
         avg_pct=avg_pct,
+        conn=conn,
     )
     sentiment_marginal_score = clamp(50 + sentiment["marginal_change"] * 0.5)
     short_emotion_score = clamp(limit_rate * 220 + max(avg_pct, 0) * 180 + min(max_consecutive, 5) * 8)

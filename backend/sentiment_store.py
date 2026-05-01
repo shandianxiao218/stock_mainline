@@ -154,3 +154,70 @@ def price_sentiment_divergence(
     触发条件：热度高但价格不涨（热度 > 70 且 涨幅 < 0.3%）。
     """
     return absolute_heat > 70 and abs(avg_pct) < 0.003 and amount_ratio > 1.5
+
+
+def load_hot_rank_for_symbols(conn: sqlite3.Connection, symbols: list[str], trade_date: str) -> dict[str, int]:
+    """从 ak_hot_rank_daily 查询成分股热度排名。返回 {symbol: hot_rank}。"""
+    try:
+        placeholders = ",".join("?" for _ in symbols)
+        rows = conn.execute(
+            f"""
+            select symbol, hot_rank from ak_hot_rank_daily
+            where trade_date = ? and symbol in ({placeholders})
+            """,
+            [trade_date, *symbols],
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+    except Exception:
+        return {}
+
+
+def compute_hot_rank_sentiment(symbols: list[str], hot_ranks: dict[str, int]) -> float:
+    """根据成分股热度排名计算板块级热度分（0-100）。
+
+    排名越靠前（数字越小）分数越高。前 10 名得 100 分，前 50 得 80 分，前 100 得 60 分。
+    取板块内有排名成分股的平均分。
+    """
+    if not hot_ranks:
+        return 0.0
+    scores = []
+    for rank in hot_ranks.values():
+        if rank <= 10:
+            scores.append(100)
+        elif rank <= 30:
+            scores.append(90)
+        elif rank <= 50:
+            scores.append(80)
+        elif rank <= 100:
+            scores.append(60)
+        else:
+            scores.append(40)
+    return sum(scores) / len(scores)
+
+
+def enhanced_sentiment_scores(
+    sector_code: str,
+    symbols: list[str],
+    trade_date: str,
+    amount: float,
+    amount_ratio: float,
+    limit_rate: float,
+    avg_pct: float,
+    conn: sqlite3.Connection | None = None,
+) -> dict[str, float]:
+    """增强版舆情评分：行情代理 + 热度排名 + 龙虎榜。"""
+    base = proxy_sentiment_scores(sector_code, amount, amount_ratio, limit_rate, avg_pct)
+
+    hot_boost = 0.0
+    if conn is not None:
+        hot_ranks = load_hot_rank_for_symbols(conn, symbols, trade_date)
+        hot_score = compute_hot_rank_sentiment(symbols, hot_ranks)
+        if hot_score > 0:
+            # 热度排名加权：有数据时占 20% 权重
+            hot_boost = (hot_score - base["absolute_heat"]) * 0.2
+
+    if hot_boost != 0:
+        base["absolute_heat"] = round(min(100, max(0, base["absolute_heat"] + hot_boost)), 2)
+        base["hot_rank_source"] = "akshare"
+
+    return base
