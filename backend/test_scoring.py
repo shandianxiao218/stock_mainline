@@ -417,5 +417,55 @@ class NoFutureLeakTest(unittest.TestCase):
         self.assertGreater(config["risk_cap"], 0)
 
 
+@unittest.skipUnless(db_ready(), "本地 SQLite 数据库不存在，跳过 Excel 导出测试")
+class ExcelExportTest(unittest.TestCase):
+    """Excel 导出回归测试。"""
+
+    def test_ranking_excel_data_available(self) -> None:
+        """榜单 Excel 所需数据可正常生成。"""
+        from io import BytesIO
+        import pandas as pd
+        ranking = ranking_payload("2026-04-29", limit=10)
+        rows = []
+        for item in ranking["items"]:
+            rows.append({
+                "排名": item["rank"],
+                "主线": item["theme_name"],
+                "主线分": item["theme_score"],
+                "热度分": item["heat_score"],
+                "延续性分": item["continuation_score"],
+                "风险扣分": item["risk_penalty"],
+                "状态": item["status"],
+            })
+        self.assertGreater(len(rows), 0)
+        # 验证能写入 Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="主线榜单")
+        self.assertGreater(len(output.getvalue()), 0)
+
+    def test_risk_detail_rows_available(self) -> None:
+        """风险明细数据可正常提取。"""
+        ranking = ranking_payload("2026-04-29", limit=10)
+        risk_rows = []
+        for item in ranking["items"]:
+            for risk in item["risks"]:
+                risk_rows.append({
+                    "主线": item["theme_name"],
+                    "风险项": risk["risk_type"],
+                    "扣分": risk["penalty"],
+                })
+        # 风险可能为空（低风险板块），但结构应正确
+        self.assertIsInstance(risk_rows, list)
+
+    def test_daily_report_exportable(self) -> None:
+        """日度复盘报告数据可正常获取。"""
+        from real_scoring import daily_report
+        report = daily_report("2026-04-29")
+        self.assertIn("date", report)
+        self.assertIn("report", report)
+        self.assertGreater(len(report["report"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
