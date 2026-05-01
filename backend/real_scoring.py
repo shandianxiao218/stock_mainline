@@ -32,7 +32,8 @@ HEAT_WEIGHTS = {
     "板块广度": 14,
     "舆情边际变化率": 8,
     "舆情绝对热度": 4,
-    "催化强度": 6,
+    "催化强度": 4,
+    "龙虎榜热度": 2,
     "容量与可交易性": 4,
 }
 
@@ -423,6 +424,16 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
     # 无催化时给低基础分（45/48），有催化时按等级衰减
     heat_catalyst_score = 45 + catalyst_strength * 0.55 if catalyst_strength > 0 else 45
     cont_catalyst_score = 48 + catalyst_continuation * 0.52 if catalyst_continuation > 0 else 48
+
+    # 龙虎榜数据查询（AKShare）
+    dt_text = date_text(trade_date)
+    dragon_tiger_map = _load_dragon_tiger(conn, symbols, dt_text)
+    dt_net_buy = sum(r["net_buy_amount"] for r in dragon_tiger_map.values())
+    dt_count = len(dragon_tiger_map)
+    # 龙虎榜热度和延续性因子：有龙虎榜净买入提升分数
+    dt_heat_boost = clamp(15 * min(dt_count, 3) + min(dt_net_buy / 1e8, 5) * 5) if dt_count > 0 else 0
+    heat_dragon_tiger = clamp(50 + dt_heat_boost)
+
     limit_quality_score = 20.0 if touched_count == 0 else clamp(
         45 + limit_rate * 110 - break_rate * 55 + min(max_consecutive, 5) * 5 - max(0, 0.45 - close_pos) * 45
     )
@@ -435,6 +446,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "舆情边际变化率": sentiment_marginal_score,
         "舆情绝对热度": sentiment["absolute_heat"],
         "催化强度": clamp(heat_catalyst_score),
+        "龙虎榜热度": heat_dragon_tiger,
         "容量与可交易性": clamp(35 + amount_share * 800 + math.log1p(amount / 500_000_000) * 12),
     }
     continuation_factors = {
@@ -508,6 +520,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "舆情边际变化率": f"当前无真实舆情源，使用成交放大代理；边际变化{sentiment['marginal_change']:.2f}%",
         "舆情绝对热度": f"行情代理绝对热度{sentiment['absolute_heat']:.2f}",
         "催化强度": f"催化强度{heat_catalyst_score:.1f}（{len(catalyst_details)}条催化，最高等级{catalyst_details[0]['level'] if catalyst_details else '无'}）" if catalyst_details else "无催化事件，默认45分",
+        "龙虎榜热度": f"上榜{dt_count}只，净买额{dt_net_buy / 1e8:.2f}亿" if dt_count > 0 else "无龙虎榜数据",
         "容量与可交易性": f"成交额{amount / 100000000:.2f}亿，占全市场{amount_share * 100:.2f}%",
     }
     heat_formulas = {
@@ -518,6 +531,8 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
         "舆情边际变化率": "50 + 代理边际变化 / 2，限制在0-100",
         "舆情绝对热度": "成交额放大、涨停率、涨幅的行情代理热度",
         "催化强度": "按S/A/B/C等级赋基础分（85/70/50/30），20日线性衰减，无催化默认45",
+        "龙虎榜热度": "上榜数量 + 净买入额，无数据默认50",
+        "龙虎榜热度": f"上榜{dt_count}只，净买额{dt_net_buy / 1e8:.2f}亿" if dt_count > 0 else "无龙虎榜数据，默认50",
         "容量与可交易性": "成交额规模 + 全市场成交占比，封顶100",
     }
     continuation_basis = {
@@ -572,7 +587,7 @@ def score_sector_from_db(conn: sqlite3.Connection, sector: dict[str, Any], trade
                 "limit_break": item["limit_break"],
                 "touched_limit": item.get("touched_limit", False),
                 "consecutive_boards": item.get("consecutive_boards", 0),
-                "hot_money": "未接入",
+                "hot_money": "有龙虎榜记录" if item["symbol"] in dragon_tiger_map else "",
             }
             for item in sorted(metrics, key=lambda row: row["amount"], reverse=True)
         ],
@@ -719,6 +734,27 @@ def load_limit_signals(conn: sqlite3.Connection, symbols: list[str], trade_date:
         }
         for row in rows
     }
+
+
+def _load_dragon_tiger(conn: sqlite3.Connection, symbols: list[str], trade_date: str) -> dict[str, dict[str, Any]]:
+    """查询当日成分股的龙虎榜数据。返回 {symbol: {net_buy_amount, buy_amount, ...}}。"""
+    try:
+        placeholders = ",".join("?" for _ in symbols)
+        rows = conn.execute(
+            f"""
+            select symbol, net_buy_amount, buy_amount, sell_amount, reason
+            from ak_dragon_tiger_daily
+            where trade_date = ? and symbol in ({placeholders})
+            """,
+            [trade_date, *symbols],
+        ).fetchall()
+        return {
+            row[0]: {"net_buy_amount": row[1], "buy_amount": row[2], "sell_amount": row[3], "reason": row[4]}
+            for row in rows
+        }
+    except Exception:
+        # 表不存在时静默返回空
+        return {}
 
 
 def similarity(left: dict[str, Any], right: dict[str, Any]) -> float:
