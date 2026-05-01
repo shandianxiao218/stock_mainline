@@ -467,5 +467,66 @@ class ExcelExportTest(unittest.TestCase):
         self.assertGreater(len(report["report"]), 0)
 
 
+class DragonTigerStoreTest(unittest.TestCase):
+    """龙虎榜数据存储和评分测试。"""
+
+    def setUp(self) -> None:
+        self._conn = sqlite3.connect(":memory:")
+        from load_akshare_data import init_schema
+        init_schema(self._conn)
+
+    def tearDown(self) -> None:
+        self._conn.close()
+
+    def test_save_and_query_dragon_tiger(self) -> None:
+        """龙虎榜数据可保存和查询。"""
+        import pandas as pd
+        from load_akshare_data import save_dragon_tiger
+        df = pd.DataFrame([{
+            "trade_date": "20260429",
+            "symbol": "SH600000",
+            "stock_name": "浦发银行",
+            "close_price": 10.5,
+            "pct_change": 2.0,
+            "net_buy_amount": 1e8,
+            "buy_amount": 3e8,
+            "sell_amount": 2e8,
+            "total_amount": 5e8,
+            "market_total_amount": 1e10,
+            "net_buy_ratio": 1.0,
+            "turnover_ratio": 5.0,
+            "float_cap": 1e11,
+            "reason": "涨幅偏离值达到7%",
+        }])
+        count = save_dragon_tiger(self._conn, df)
+        self.assertEqual(count, 1)
+        row = self._conn.execute(
+            "select stock_name, net_buy_amount from ak_dragon_tiger_daily where symbol = 'SH600000'"
+        ).fetchone()
+        self.assertEqual(row[0], "浦发银行")
+        self.assertAlmostEqual(row[1], 1e8)
+
+    def test_dragon_tiger_scoring_integration(self) -> None:
+        """龙虎榜查询函数在表不存在时不报错。"""
+        from real_scoring import _load_dragon_tiger
+        conn = sqlite3.connect(":memory:")
+        result = _load_dragon_tiger(conn, ["SH600000"], "20260429")
+        self.assertEqual(result, {})
+        conn.close()
+
+    def test_hot_rank_sentiment(self) -> None:
+        """热度排名计算正确。"""
+        from sentiment_store import compute_hot_rank_sentiment
+        # 前 5 名
+        score = compute_hot_rank_sentiment(
+            ["SH600000", "SZ000001"],
+            {"SH600000": 3, "SZ000001": 20},
+        )
+        self.assertGreater(score, 80)
+        # 无数据
+        score_empty = compute_hot_rank_sentiment([], {})
+        self.assertEqual(score_empty, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -69,12 +69,14 @@ frontend/                   → 静态 HTML/CSS/JS 看板
 | `theme_universe.py` | 人工主题/成分定义（无真实板块时的回退） |
 | `theme_store.py` | 主线 CRUD、映射管理、版本审计（FR-003） |
 | `sector_store.py` | 真实板块查询、成分历史版本、差异对比（FR-002） |
-| `sentiment_store.py` | 行情代理舆情评分、过热检测、背离检测（SRS 9.7） |
+| `sentiment_store.py` | 行情代理舆情评分、过热检测、背离检测、东财热度排名融合（SRS 9.7） |
 | `alert_store.py` | 预警信号检测（FR-015） |
 | `model_config_store.py` | 模型参数版本管理，含动态因子权重 |
 | `review_store.py` | 日度复盘结果存储 |
 | `audit_store.py` | API 访问和操作审计日志 |
-| `catalyst_store.py` | 新闻催化事件追踪 |
+| `catalyst_store.py` | 新闻催化事件追踪，按等级和衰减系数评分 |
+| `cluster_store.py` | 自动聚合结果版本化存储 |
+| `load_akshare_data.py` | AKShare 龙虎榜和东财热度数据拉取入库 |
 | `watchlist_store.py` | 自选股和持仓管理 |
 | `permissions.py` | 角色权限：访客、普通用户、研究员、管理员、审计员 |
 | `data_quality.py` | 数据完整性监控 |
@@ -85,5 +87,5 @@ frontend/                   → 静态 HTML/CSS/JS 看板
 - 与 SRS v1.0 不一致的产品/技术决策必须记录到 `docs/DESIGN.md` 的"与 SRS 的差异决策记录"章节。
 - `MEMORY.md` 记录当前决策和长期约束；`TODO.md` 记录可执行任务。
 - 每完成一个明确步骤后提交一次 Git。不提交运行产物、缓存、日志、编译 exe 或本地导出的行情数据。
-- Python 3.12，pandas 是唯一的外部依赖，无 requirements 文件，需手动安装。
+- Python 3.12，pandas + akshare 为主要外部依赖，需手动安装。
 - 数据库为 SQLite，路径 `backend/data/radar.db`。

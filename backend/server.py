@@ -27,6 +27,7 @@ from backtest_store import (
 )
 from catalyst_store import add_catalyst, list_catalysts
 from cluster_store import load_clusters, list_cluster_dates
+from load_akshare_data import akshare_status, fetch_dragon_tiger, fetch_hot_rank, save_dragon_tiger, save_hot_rank, init_schema as init_akshare_schema
 from data_quality import data_quality_payload
 from data_validation import data_coverage_payload, no_future_guard_payload
 from model_config_store import get_active_config, list_configs, save_config
@@ -259,6 +260,13 @@ class RadarHandler(BaseHTTPRequestHandler):
             limit = int(query.get("limit", ["100"])[0])
             return self.send_json({"items": list_catalysts(date, limit)})
 
+        # AKShare 数据状态
+        if path == "/api/v1/data/akshare/status":
+            import sqlite3 as _sql3
+            _db = CURRENT_DIR / "data" / "radar.db"
+            with _sql3.connect(_db) as _c:
+                return self.send_json(akshare_status(_c))
+
         if path == "/api/v1/sectors":
             limit = int(query.get("limit", ["100"])[0])
             keyword = query.get("q", [""])[0]
@@ -415,6 +423,40 @@ class RadarHandler(BaseHTTPRequestHandler):
                 return self.send_error_json(500, f"回测失败：{exc}")
             write_audit("backtest_run", method="POST", path=parsed.path, target=result.get("task_id"), detail=result.get("metrics", {}))
             return self.send_json(result)
+
+        # AKShare 数据同步
+        if parsed.path == "/api/v1/data/akshare/sync":
+            if not self.require_permission("run_backtest"):
+                return
+            import sqlite3 as _sql3
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                body = json.loads(raw)
+            except json.JSONDecodeError:
+                body = {}
+            sync_type = body.get("type", "all")
+            _db = CURRENT_DIR / "data" / "radar.db"
+            results: dict[str, Any] = {}
+            with _sql3.connect(_db) as _c:
+                init_akshare_schema(_c)
+                if sync_type in ("lhb", "all"):
+                    start = body.get("start_date", date.replace("-", ""))
+                    end = body.get("end_date", start)
+                    try:
+                        df = fetch_dragon_tiger(start, end)
+                        count = save_dragon_tiger(_c, df)
+                        results["dragon_tiger"] = count
+                    except Exception as exc:
+                        results["dragon_tiger_error"] = str(exc)
+                if sync_type in ("hot", "all"):
+                    try:
+                        df = fetch_hot_rank()
+                        count = save_hot_rank(_c, df)
+                        results["hot_rank"] = count
+                    except Exception as exc:
+                        results["hot_rank_error"] = str(exc)
+            return self.send_json({"status": "completed", "results": results})
         if parsed.path == "/api/v1/reviews/save":
             if not self.require_permission("save_review"):
                 return
