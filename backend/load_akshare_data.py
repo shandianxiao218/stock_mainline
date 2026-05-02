@@ -18,12 +18,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import akshare as ak
 import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT_DIR / "backend" / "data" / "radar.db"
 BATCH_SIZE = 2000
+
+
+def _require_akshare():
+    try:
+        import akshare as ak  # type: ignore
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("未安装 akshare，无法同步 AKShare 数据；本地已入库数据仍可正常读取") from exc
+    return ak
 
 
 def _now() -> str:
@@ -98,6 +105,7 @@ def fetch_dragon_tiger(start_date: str, end_date: str) -> pd.DataFrame:
 
     start_date/end_date: YYYYMMDD 格式。
     """
+    ak = _require_akshare()
     df = ak.stock_lhb_detail_em(start_date=start_date, end_date=end_date)
     if df is None or df.empty:
         return pd.DataFrame()
@@ -135,6 +143,7 @@ def fetch_dragon_tiger(start_date: str, end_date: str) -> pd.DataFrame:
 
 def fetch_hot_rank() -> pd.DataFrame:
     """从 AKShare 拉取当日东财人气排行。"""
+    ak = _require_akshare()
     df = ak.stock_hot_rank_em()
     if df is None or df.empty:
         return pd.DataFrame()
