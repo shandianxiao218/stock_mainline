@@ -542,6 +542,14 @@ function renderDetail(detail) {
   fetchJson(`/api/v1/themes/${detail.theme_id}/relay-break?date=${dateValue()}`).then((relay) => {
     // 已通过 sectors 中的 relay_break 展示，此处预留扩展
   }).catch(() => {});
+
+  // 舆情热度趋势图
+  fetchJson(`/api/v1/themes/${detail.theme_id}/sentiment-history?date=${dateValue()}&days=20`).then((payload) => {
+    renderSentimentChart(payload.items || []);
+  }).catch(() => {
+    const el = $("sentimentChartSvg");
+    if (el) el.innerHTML = "<p style='font-size:12px;color:var(--muted);'>舆情趋势数据不足</p>";
+  });
 }
 
 function renderScoreAudit(detail) {
@@ -1044,6 +1052,57 @@ document.addEventListener("click", (event) => {
   const positionButton = event.target.closest("[data-delete-position]");
   if (positionButton) deletePosition(positionButton.dataset.deletePosition);
 });
+
+function renderSentimentChart(items) {
+  const el = $("sentimentChartSvg");
+  if (!el || !items.length) {
+    if (el) el.innerHTML = "<p style='font-size:12px;color:var(--muted);'>舆情趋势数据不足</p>";
+    return;
+  }
+  // 按日期聚合（多板块取均值）
+  const byDate = {};
+  items.forEach((item) => {
+    if (!byDate[item.date]) byDate[item.date] = { heat: [], change: [] };
+    byDate[item.date].heat.push(item.absolute_heat || 0);
+    byDate[item.date].change.push(item.marginal_change || 0);
+  });
+  const dates = Object.keys(byDate).sort();
+  const heatValues = dates.map((d) => byDate[d].heat.reduce((a, b) => a + b, 0) / byDate[d].heat.length);
+  const changeValues = dates.map((d) => byDate[d].change.reduce((a, b) => a + b, 0) / byDate[d].change.length);
+
+  const width = 600, height = 200, pad = 30;
+  const maxHeat = Math.max(100, ...heatValues);
+  const minChange = Math.min(...changeValues, -20);
+  const maxChange = Math.max(...changeValues, 20);
+  const step = (width - pad * 2) / Math.max(dates.length - 1, 1);
+
+  const yHeat = (v) => pad + (1 - v / maxHeat) * (height - pad * 2);
+  const yChange = (v) => pad + (1 - (v - minChange) / (maxChange - minChange || 1)) * (height - pad * 2);
+
+  const heatLine = heatValues.map((v, i) => `${pad + i * step},${yHeat(v)}`).join(" ");
+  const changeLine = changeValues.map((v, i) => `${pad + i * step},${yChange(v)}`).join(" ");
+
+  el.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" role="img" style="width:100%;min-width:400px;height:auto;border:1px solid var(--line);border-radius:8px;">
+      <rect width="${width}" height="${height}" fill="#fafbfc" />
+      <text x="${pad}" y="16" fill="var(--muted)" font-size="11">绝对热度(蓝) / 边际变化(橙)</text>
+      <text x="${width - 80}" y="16" fill="var(--muted)" font-size="11">${dates.length}日</text>
+      <!-- 零线 -->
+      <line x1="${pad}" y1="${yChange(0)}" x2="${width - pad}" y2="${yChange(0)}" stroke="#e8edf3" stroke-width="1" stroke-dasharray="4" />
+      <!-- 热度线 -->
+      <polyline points="${heatLine}" fill="none" stroke="#1f6feb" stroke-width="2" />
+      ${heatValues.map((v, i) => `<circle cx="${pad + i * step}" cy="${yHeat(v)}" r="3" fill="#1f6feb" />`).join("")}
+      <!-- 边际变化线 -->
+      <polyline points="${changeLine}" fill="none" stroke="#b7791f" stroke-width="2" />
+      ${changeValues.map((v, i) => `<circle cx="${pad + i * step}" cy="${yChange(v)}" r="3" fill="#b7791f" />`).join("")}
+      <!-- 日期标签 -->
+      ${dates.filter((_, i) => i % Math.max(1, Math.floor(dates.length / 6)) === 0).map((d, i, arr) => {
+        const idx = dates.indexOf(d);
+        return `<text x="${pad + idx * step}" y="${height - 4}" fill="var(--muted)" font-size="10" text-anchor="middle">${d.slice(5)}</text>`;
+      }).join("")}
+    </svg>
+  `;
+}
 
 loadDashboard().catch((error) => {
   $("reportText").textContent = `加载失败：${error.message}`;

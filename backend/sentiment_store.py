@@ -221,3 +221,40 @@ def enhanced_sentiment_scores(
         base["hot_rank_source"] = "akshare"
 
     return base
+
+
+def sentiment_history(
+    conn: sqlite3.Connection,
+    sector_codes: list[str],
+    end_date: str,
+    days: int = 20,
+) -> list[dict[str, Any]]:
+    """查询多个板块近 N 日的舆情评分序列。"""
+    init_sentiment_schema(conn)
+    if not sector_codes:
+        return []
+    placeholders = ",".join("?" for _ in sector_codes)
+    rows = conn.execute(
+        f"""
+        select trade_date, sector_code, absolute_heat, marginal_change,
+               volume_proxy, limit_proxy, pct_proxy
+        from local_sentiment_daily
+        where sector_code in ({placeholders})
+          and trade_date <= ?
+        order by trade_date desc
+        limit ?
+        """,
+        (*sector_codes, end_date, days * len(sector_codes)),
+    ).fetchall()
+    return [
+        {
+            "date": r[0],
+            "sector_code": r[1],
+            "absolute_heat": r[2],
+            "marginal_change": r[3],
+            "volume_proxy": r[4],
+            "limit_proxy": r[5],
+            "pct_proxy": r[6],
+        }
+        for r in rows
+    ]

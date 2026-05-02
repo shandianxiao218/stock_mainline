@@ -201,6 +201,19 @@ class RadarHandler(BaseHTTPRequestHandler):
                 return self.send_error_json(404, "Theme not found")
             return self.send_json({"date": date, "theme_id": theme_id, "factor_contribution": theme["factor_contribution"]})
 
+        if path.startswith("/api/v1/themes/") and path.endswith("/sentiment-history"):
+            theme_id = unquote(path.split("/")[4])
+            days = int(query.get("days", ["20"])[0])
+            theme = find_theme(theme_id, date)
+            if not theme:
+                return self.send_error_json(404, "Theme not found")
+            sector_codes = [s["sector_id"] for s in theme.get("sectors", [])]
+            import sqlite3 as _sql3sh
+            from sentiment_store import sentiment_history
+            with _sql3sh.connect(DB_PATH) as _conn:
+                items = sentiment_history(_conn, sector_codes, date, days)
+            return self.send_json({"date": date, "theme_id": theme_id, "days": days, "items": items})
+
         if path == "/api/v1/reports/daily":
             return self.send_json(daily_report(date))
 
