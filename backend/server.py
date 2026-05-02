@@ -19,11 +19,14 @@ sys.path.insert(0, str(CURRENT_DIR))
 from eastmoney_data import eastmoney_status
 from audit_store import list_audit_logs, write_audit
 from backtest_store import (
+    cancel_backtest_run,
     create_backtest_run,
+    estimate_progress,
     fail_backtest_run,
     finish_backtest_run,
     get_backtest_run,
     list_backtest_runs,
+    save_result_file,
 )
 from catalyst_store import add_catalyst, list_catalysts
 from cluster_store import load_clusters, list_cluster_dates
@@ -389,11 +392,57 @@ class RadarHandler(BaseHTTPRequestHandler):
             limit = int(query.get("limit", ["50"])[0])
             return self.send_json({"items": list_backtest_runs(limit)})
 
+        if path.startswith("/api/v1/backtest/runs/") and path.endswith("/cancel"):
+            if not self.require_permission("run_backtest"):
+                return
+            task_id = unquote(path.split("/")[5])
+            cancelled = cancel_backtest_run(task_id)
+            return self.send_json({"task_id": task_id, "cancelled": cancelled})
+
+        if path.startswith("/api/v1/backtest/runs/") and path.endswith("/progress"):
+            if not self.require_permission("run_backtest"):
+                return
+            task_id = unquote(path.split("/")[5])
+            progress = estimate_progress(task_id)
+            return self.send_json({"task_id": task_id, "progress": progress})
+
+        if path.startswith("/api/v1/backtest/runs/") and path.endswith("/download"):
+            if not self.require_permission("run_backtest"):
+                return
+            task_id = unquote(path.split("/")[5])
+            run = get_backtest_run(task_id)
+            if not run or run["status"] != "completed":
+                return self.send_error_json(404, "回测结果不存在或未完成")
+            samples = run.get("samples", [])
+            metrics = run.get("metrics", {})
+            import io
+            csv_rows = [
+                ["trade_date", "exit_date", "selected_return", "benchmark_return", "excess_return", "selected_themes"],
+                *[[
+                    s.get("trade_date", ""), s.get("exit_date", ""),
+                    s.get("selected_return", ""), s.get("benchmark_return", ""),
+                    s.get("excess_return", ""), "|".join(s.get("selected_themes", [])),
+                ] for s in samples],
+            ]
+            csv_content = "\n".join(",".join(f'"{c}"' for c in row) for row in csv_rows)
+            # 同时保存到文件
+            filename = f"backtest_{task_id}.csv"
+            save_result_file(task_id, csv_content.encode("utf-8"), filename)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.end_headers()
+            self.wfile.write(("\ufeff" + csv_content).encode("utf-8"))
+            return
+
         if path.startswith("/api/v1/backtest/runs/"):
             if not self.require_permission("run_backtest"):
                 return
             task_id = unquote(path.split("/")[5])
             run = get_backtest_run(task_id)
+            # 追加进度
+            if run and run["status"] == "running":
+                run["progress"] = estimate_progress(task_id)
             return self.send_json(run) if run else self.send_error_json(404, "Backtest run not found")
 
         if path == "/api/v1/audit/logs":

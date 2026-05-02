@@ -163,3 +163,72 @@ def get_backtest_run(task_id: str) -> dict[str, Any] | None:
         "finished_at": row["finished_at"],
         "result_file": row["result_file"],
     }
+
+
+def cancel_backtest_run(task_id: str) -> bool:
+    """取消一个运行中的回测任务。仅 status=running 时可取消。"""
+    with _conn() as conn:
+        init_backtest_schema(conn)
+        row = conn.execute(
+            "SELECT status FROM local_backtest_run WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row or row["status"] != "running":
+            return False
+        conn.execute(
+            "UPDATE local_backtest_run SET status = ?, error = ?, finished_at = ? WHERE task_id = ?",
+            ("cancelled", "用户手动取消", _now(), task_id),
+        )
+        conn.commit()
+    return True
+
+
+def estimate_progress(task_id: str) -> float:
+    """估算回测进度百分比（0.0~1.0）。
+
+    基于已运行时间和请求数据区间长度做粗略估算。
+    """
+    with _conn() as conn:
+        init_backtest_schema(conn)
+        row = conn.execute(
+            "SELECT status, request_json, started_at FROM local_backtest_run WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+    if not row:
+        return 0.0
+    if row["status"] != "running":
+        return 1.0 if row["status"] == "completed" else 0.0
+    try:
+        request = json.loads(row["request_json"] or "{}")
+        start = request.get("start_date", "20210101")
+        end = request.get("end_date", "20991231")
+        # 计算总天数
+        start_int = int(str(start).replace("-", ""))
+        end_int = int(str(end).replace("-", ""))
+        total_days = max(1, (end_int // 10000 * 365 + (end_int % 10000 // 100) * 30 + end_int % 100)
+                         - (start_int // 10000 * 365 + (start_int % 10000 // 100) * 30 + start_int % 100))
+        # 已运行时间估算
+        started = datetime.strptime(row["started_at"], "%Y-%m-%d %H:%M:%S")
+        elapsed_seconds = max(1, (datetime.now() - started).total_seconds())
+        # 假设每天回测约 0.3 秒（经验值）
+        estimated_total_seconds = total_days * 0.3
+        progress = min(0.95, elapsed_seconds / max(estimated_total_seconds, 1))
+        return round(progress, 2)
+    except Exception:
+        return 0.5  # 无法估算时返回 50%
+
+
+def save_result_file(task_id: str, content: bytes, filename: str) -> str:
+    """保存回测结果到文件，返回文件路径。"""
+    result_dir = ROOT_DIR / "backend" / "data" / "backtest_results"
+    result_dir.mkdir(parents=True, exist_ok=True)
+    filepath = result_dir / filename
+    filepath.write_bytes(content)
+    with _conn() as conn:
+        init_backtest_schema(conn)
+        conn.execute(
+            "UPDATE local_backtest_run SET result_file = ? WHERE task_id = ?",
+            (str(filepath), task_id),
+        )
+        conn.commit()
+    return str(filepath)

@@ -812,7 +812,8 @@ async function pollBacktest(taskId) {
     await sleep(attempt < 10 ? 800 : 2000);
     const result = await fetchJson(`/api/v1/backtest/runs/${taskId}`);
     state.backtestResult = result;
-    target.textContent = formatBacktest(result);
+    const progressPct = result.progress ? ` [${(result.progress * 100).toFixed(0)}%]` : "";
+    target.textContent = formatBacktest(result) + (result.status === "running" ? `\n\n计算中${progressPct}...` : "");
     if (result.status !== "running") return;
   }
   target.textContent = `${target.textContent}\n\n任务仍在后台运行，可稍后刷新任务状态。`;
@@ -820,7 +821,16 @@ async function pollBacktest(taskId) {
 
 function downloadBacktestCsv() {
   const result = state.backtestResult;
-  if (!result || !result.samples || !result.samples.length) return;
+  if (!result || !result.task_id) return;
+  // 优先使用后端下载 API（已完成任务），否则本地 CSV 生成
+  if (result.status === "completed" && result.task_id) {
+    const link = document.createElement("a");
+    link.href = `/api/v1/backtest/runs/${result.task_id}/download`;
+    link.download = `backtest_${result.task_id}.csv`;
+    link.click();
+    return;
+  }
+  if (!result.samples || !result.samples.length) return;
   const rows = [
     ["trade_date", "exit_date", "selected_return", "benchmark_return", "excess_return", "selected_themes"],
     ...result.samples.map((sample) => [
