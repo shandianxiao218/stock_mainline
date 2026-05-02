@@ -861,6 +861,21 @@ h4 {
 .stage-history-item .stage-date { color: var(--muted); min-width: 90px; }
 .stage-history-item .stage-reason { color: var(--muted); font-size: 12px; }
 
+/* 数据来源标签 */
+.source-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--muted);
+}
+.source-tag.source-real { background: #e4f3ec; color: #1b8a5a; border-color: #bbf0d9; }
+.source-tag.source-proxy { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.source-tag.source-missing { background: #f3e8ff; color: #7c3aed; border-color: #ddd6fe; }
+.source-tag.source-ok { background: #eef5ff; color: #1e40af; border-color: #bfdbfe; }
+
 .backtest-result {
   margin: 14px 0 0;
   padding: 14px;

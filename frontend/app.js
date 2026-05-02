@@ -555,6 +555,14 @@ function renderScoreAudit(detail) {
     <span>${detail.theme_score} = ${heatWeight.toFixed(2)} × ${detail.heat_score} + ${continuationWeight.toFixed(2)} × ${detail.continuation_score} - ${detail.risk_penalty}</span>
   `;
 
+  // 数据来源标签
+  const sources = state.ranking && state.ranking.data_sources;
+  const sourceTags = sources ? Object.entries(sources).map(([k, v]) => {
+    const cls = v === "真实" ? "source-real" : v === "缺失" ? "source-missing" : v.includes("代理") || v.includes("近似") ? "source-proxy" : "source-ok";
+    return `<span class="source-tag ${cls}" title="${k}">${k}:${v}</span>`;
+  }).join("") : "";
+  const sourceHtml = sourceTags ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">${sourceTags}</div>` : "";
+
   const sourceLabel = stats.universe_source === "theme_universe" ? "配置样例成分" : "东方财富映射成分";
   const cards = [
     ["成分来源", sourceLabel, stats.universe_note || ""],
@@ -566,6 +574,7 @@ function renderScoreAudit(detail) {
   ];
 
   $("scoreAudit").innerHTML = `
+    ${sourceHtml}
     <div class="audit-card-grid">
       ${cards.map(([label, value, note]) => `
         <div class="audit-card">

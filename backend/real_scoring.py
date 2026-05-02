@@ -815,11 +815,16 @@ def risk_items(cluster: list[SectorScore]) -> list[dict[str, Any]]:
             reasons[risk_type].append(item.raw["sector_name"])
     rows = []
     for risk_type, penalty in sorted(totals.items(), key=lambda pair: pair[1], reverse=True):
+        # R-P1-3: 涨停/炸板相关标注日线近似
+        is_approx = risk_type in ("炸板率过高", "板块连续高潮")
+        reason_text = f"{'、'.join(reasons[risk_type])}触发{risk_type}信号"
+        if is_approx:
+            reason_text += "（日线近似，非盘口级封板质量）"
         rows.append({
             "risk_type": risk_type,
             "penalty": round(min(penalty, 5.0), 2),
             "severity": "high" if penalty >= 4 else "medium" if penalty >= 2 else "low",
-            "reason": f"{'、'.join(reasons[risk_type])}触发{risk_type}信号",
+            "reason": reason_text,
         })
     return rows
 
@@ -1376,6 +1381,16 @@ def ranking_payload(date: str, period: str = "short", limit: int | None = None) 
         "period": period,
         "market": market,
         "model_config": get_active_config(),
+        "data_sources": {
+            "行情": "真实",
+            "板块成分": "东方财富映射" if items and items[0]["sectors"][0]["stats"].get("universe_source") != "theme_universe" else "配置样例",
+            "舆情": "成交/涨幅代理",
+            "涨停/炸板": "日线近似",
+            "催化": "人工录入" if any(c for t in items for c in t.get("catalysts", [])) else "缺失",
+            "龙虎榜": "AKShare接口" if items and items[0]["sectors"][0]["stats"].get("has_dragon_tiger") else "缺失",
+            "资金流": "成交/价格同步性代理",
+            "聚合": "自动聚类",
+        },
         **conf,
         "row_limit": "all" if limit is None else limit,
         "total_count": len(themes),
