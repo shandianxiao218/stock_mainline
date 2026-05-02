@@ -424,7 +424,7 @@ function renderRanking(items) {
       <td>${item.heat_score}</td>
       <td>${item.continuation_score}</td>
       <td class="risk">-${item.risk_penalty}</td>
-      <td>${item.status}</td>
+      <td>${item.stage ? `<span class="stage-badge stage-${item.stage}">${item.stage}</span>` : item.status}</td>
       <td>${item.branches.join("、")}</td>
     </tr>
   `).join("");
@@ -455,6 +455,38 @@ async function selectTheme(themeId) {
 function renderDetail(detail) {
   $("detailTitle").textContent = detail.theme_name;
   $("detailStatus").textContent = detail.status;
+
+  // 主线阶段展示
+  const stageSummary = $("stageSummary");
+  if (stageSummary && detail.stage) {
+    const prevText = detail.previous_stage ? `（前阶段：${detail.previous_stage}）` : "";
+    stageSummary.innerHTML = `
+      <p style="margin:0 0 6px;">
+        <span class="stage-badge stage-${detail.stage}">${detail.stage}</span>
+        ${prevText}
+        <span style="color:var(--muted);font-size:12px;margin-left:8px;">置信度 ${(detail.stage_confidence * 100).toFixed(0)}%</span>
+      </p>
+      <p style="margin:0;color:var(--muted);font-size:12px;">${detail.stage_reason || ""}</p>
+      ${(detail.transition_signals || []).map(s => `<span style="font-size:11px;color:var(--muted);background:#edf2f7;border-radius:4px;padding:2px 6px;margin:2px;display:inline-block;">${s}</span>`).join("")}
+    `;
+  }
+  // 加载阶段历史
+  if (detail.theme_id) {
+    fetchJson(`/api/v1/themes/${detail.theme_id}/stage-history?date=${dateValue()}&days=20`).then((payload) => {
+      const listEl = $("stageHistoryList");
+      if (!listEl) return;
+      const items = payload.items || [];
+      listEl.innerHTML = items.length
+        ? items.map((item) => `
+          <div class="stage-history-item">
+            <span class="stage-date">${item.date}</span>
+            <span class="stage-badge stage-${item.stage}">${item.stage}</span>
+            <span class="stage-reason">${item.reason || ""}</span>
+          </div>
+        `).join("")
+        : "<p style='font-size:12px;color:var(--muted);'>暂无阶段历史</p>";
+    }).catch(() => {});
+  }
   $("scoreBars").innerHTML = [
     ["主线分", detail.theme_score, "var(--blue)"],
     ["热度分", detail.heat_score, "var(--teal)"],

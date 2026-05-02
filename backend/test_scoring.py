@@ -528,5 +528,180 @@ class DragonTigerStoreTest(unittest.TestCase):
         self.assertEqual(score_empty, 0.0)
 
 
+class ThemeStageStateMachineTest(unittest.TestCase):
+    """主线阶段有限状态机单元测试。"""
+
+    def test_all_stages_defined(self) -> None:
+        """阶段枚举完整。"""
+        from theme_stage_store import ALL_STAGES
+        self.assertEqual(len(ALL_STAGES), 6)
+        for s in ("启动", "加速", "高潮", "分歧", "退潮", "修复"):
+            self.assertIn(s, ALL_STAGES)
+
+    def test_valid_transitions(self) -> None:
+        """合法迁移通过验证。"""
+        from theme_stage_store import is_valid_transition
+        # 启动 -> 加速 ✓
+        self.assertTrue(is_valid_transition("启动", "加速"))
+        # 加速 -> 高潮 ✓
+        self.assertTrue(is_valid_transition("加速", "高潮"))
+        # 高潮 -> 分歧 ✓
+        self.assertTrue(is_valid_transition("高潮", "分歧"))
+        # 分歧 -> 修复 ✓
+        self.assertTrue(is_valid_transition("分歧", "修复"))
+        # 退潮 -> 修复 ✓
+        self.assertTrue(is_valid_transition("退潮", "修复"))
+        # 修复 -> 加速 ✓
+        self.assertTrue(is_valid_transition("修复", "加速"))
+        # 保持当前 ✓
+        self.assertTrue(is_valid_transition("加速", "加速"))
+        # 首次（None）✓
+        self.assertTrue(is_valid_transition(None, "启动"))
+
+    def test_invalid_transitions(self) -> None:
+        """非法迁移被拒绝。"""
+        from theme_stage_store import is_valid_transition
+        # 启动 -> 高潮 ✗
+        self.assertFalse(is_valid_transition("启动", "高潮"))
+        # 启动 -> 修复 ✗
+        self.assertFalse(is_valid_transition("启动", "修复"))
+        # 高潮 -> 启动 ✗
+        self.assertFalse(is_valid_transition("高潮", "启动"))
+        # 退潮 -> 高潮 ✗
+        self.assertFalse(is_valid_transition("退潮", "高潮"))
+        # 修复 -> 启动 ✗
+        self.assertFalse(is_valid_transition("修复", "启动"))
+        # 修复 -> 高潮 ✗
+        self.assertFalse(is_valid_transition("修复", "高潮"))
+
+    def test_valid_next_stages_list(self) -> None:
+        """合法下一步阶段列表正确。"""
+        from theme_stage_store import get_valid_next_stages
+        next_from_climax = get_valid_next_stages("高潮")
+        self.assertIn("分歧", next_from_climax)
+        self.assertIn("退潮", next_from_climax)
+        self.assertEqual(len(next_from_climax), 2)
+
+    def test_save_and_load_stage(self) -> None:
+        """阶段可保存和读取。"""
+        from theme_stage_store import (
+            ensure_tables, save_stage, load_stage,
+        )
+        conn = sqlite3.connect(":memory:")
+        ensure_tables(conn)
+        save_stage(conn, "2026-04-29", "theme_test_1", "加速", "启动",
+                   "热度上升+延续性好", ["热度68+3日上升"], 0.65, "v1.0")
+        result = load_stage(conn, "2026-04-29", "theme_test_1")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["stage"], "加速")
+        self.assertEqual(result["previous_stage"], "启动")
+        self.assertEqual(result["stage_reason"], "热度上升+延续性好")
+        self.assertEqual(result["transition_signals"], ["热度68+3日上升"])
+        conn.close()
+
+    def test_save_rejects_invalid_stage(self) -> None:
+        """保存非法阶段枚举值时抛出 ValueError。"""
+        from theme_stage_store import ensure_tables, save_stage
+        conn = sqlite3.connect(":memory:")
+        ensure_tables(conn)
+        with self.assertRaises(ValueError):
+            save_stage(conn, "2026-04-29", "t1", "不存在的阶段", None,
+                       "test", [], 0.5, "v1")
+        conn.close()
+
+    def test_save_rejects_invalid_transition(self) -> None:
+        """保存非法迁移时抛出 ValueError。"""
+        from theme_stage_store import ensure_tables, save_stage
+        conn = sqlite3.connect(":memory:")
+        ensure_tables(conn)
+        with self.assertRaises(ValueError):
+            save_stage(conn, "2026-04-29", "t1", "高潮", "启动",
+                       "非法", [], 0.5, "v1")
+        conn.close()
+
+    def test_load_previous_stage(self) -> None:
+        """可查找前一日阶段。"""
+        from theme_stage_store import ensure_tables, save_stage, load_previous_stage
+        conn = sqlite3.connect(":memory:")
+        ensure_tables(conn)
+        save_stage(conn, "2026-04-28", "t1", "启动", None, "首日", [], 0.5, "v1")
+        save_stage(conn, "2026-04-29", "t1", "加速", "启动", "升温", [], 0.6, "v1")
+        prev = load_previous_stage(conn, "2026-04-30", "t1")
+        self.assertEqual(prev, "加速")
+        conn.close()
+
+    def test_stage_history(self) -> None:
+        """阶段历史查询正确。"""
+        from theme_stage_store import ensure_tables, save_stage, load_stage_history
+        conn = sqlite3.connect(":memory:")
+        ensure_tables(conn)
+        save_stage(conn, "2026-04-27", "t1", "启动", None, "首日", [], 0.5, "v1")
+        save_stage(conn, "2026-04-28", "t1", "加速", "启动", "升温", [], 0.6, "v1")
+        save_stage(conn, "2026-04-29", "t1", "高潮", "加速", "极强", [], 0.7, "v1")
+        history = load_stage_history(conn, "t1", "2026-04-29", 20)
+        self.assertEqual(len(history), 3)
+        self.assertEqual(history[0]["stage"], "高潮")  # 最新在前
+        conn.close()
+
+    def test_determine_stage_high_risk_is_ebb(self) -> None:
+        """高风险扣分判断为退潮。"""
+        from real_scoring import determine_stage
+        result = determine_stage(
+            theme_score=45, heat=50, continuation=40, risk=12,
+            previous_stage="高潮",
+        )
+        self.assertEqual(result["stage"], "退潮")
+
+    def test_determine_stage_strong_is_climax(self) -> None:
+        """极强信号判断为高潮。"""
+        from real_scoring import determine_stage
+        result = determine_stage(
+            theme_score=80, heat=78, continuation=70, risk=3,
+            limit_count=5, break_count=0,
+            previous_stage="加速",
+        )
+        self.assertEqual(result["stage"], "高潮")
+
+    def test_determine_stage_rising_is_accelerate(self) -> None:
+        """热度上升+风险低判断为加速。"""
+        from real_scoring import determine_stage
+        result = determine_stage(
+            theme_score=70, heat=70, continuation=62, risk=4,
+            heat_trend_3d=1.5,
+            previous_stage="启动",
+        )
+        self.assertEqual(result["stage"], "加速")
+
+    def test_determine_stage_invalid_transition_corrected(self) -> None:
+        """非法迁移被自动修正到最近的合法阶段。"""
+        from real_scoring import determine_stage
+        # 前阶段=高潮, 但信号指向启动 → 不合法，应修正为分歧
+        result = determine_stage(
+            theme_score=58, heat=56, continuation=55, risk=3,
+            previous_stage="高潮",
+        )
+        self.assertNotEqual(result["stage"], "启动")
+        self.assertIn(result["stage"], ("分歧", "退潮"))  # 合法的高潮→下一步
+
+    def test_determine_stage_relay_break_downgrade(self) -> None:
+        """接力断裂导致降级。"""
+        from real_scoring import determine_stage
+        result = determine_stage(
+            theme_score=72, heat=72, continuation=65, risk=4,
+            relay_lead_continue=0.2,
+            previous_stage="加速",
+        )
+        self.assertEqual(result["stage"], "分歧")
+
+    def test_determine_stage_first_day_any_stage(self) -> None:
+        """首日（无前阶段）任何阶段都合法。"""
+        from real_scoring import determine_stage
+        result = determine_stage(
+            theme_score=60, heat=58, continuation=55, risk=2,
+            previous_stage=None,
+        )
+        self.assertIn(result["stage"], ("启动", "修复", "加速", "高潮", "分歧", "退潮"))
+
+
 if __name__ == "__main__":
     unittest.main()

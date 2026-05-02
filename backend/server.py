@@ -32,6 +32,7 @@ from data_quality import data_quality_payload
 from data_validation import data_coverage_payload, no_future_guard_payload
 from model_config_store import get_active_config, list_configs, save_config
 from permissions import has_permission, roles_payload
+from theme_stage_store import load_stage_history
 from review_store import save_daily_review
 from sector_store import list_sectors, sector_constituents, sector_constituent_dates, sector_diff
 from alert_store import compute_alerts
@@ -184,6 +185,14 @@ class RadarHandler(BaseHTTPRequestHandler):
                     "relay_break": relay,
                 })
             return self.send_json({"date": date, "theme_id": theme_id, "theme_name": theme["theme_name"], "sectors": relay_items})
+
+        if path.startswith("/api/v1/themes/") and path.endswith("/stage-history"):
+            theme_id = unquote(path.split("/")[4])
+            days = int(query.get("days", ["20"])[0])
+            import sqlite3 as _sql3s
+            with _sql3s.connect(DB_PATH) as _conn:
+                history = load_stage_history(_conn, theme_id, date, days)
+            return self.send_json({"date": date, "theme_id": theme_id, "days": days, "items": history})
 
         if path.startswith("/api/v1/themes/") and path.endswith("/factor-contribution"):
             theme_id = unquote(path.split("/")[4])

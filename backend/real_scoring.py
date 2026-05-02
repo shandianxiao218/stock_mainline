@@ -14,6 +14,14 @@ from model_config_store import get_active_config, save_config
 from sentiment_store import proxy_sentiment_scores, is_overheated, price_sentiment_divergence
 from catalyst_store import get_catalysts_for_scoring, compute_catalyst_score
 from cluster_store import save_clusters, load_clusters
+from theme_stage_store import (
+    STAGE_STARTUP, STAGE_ACCELERATE, STAGE_CLIMAX, STAGE_DIVERGE,
+    STAGE_EBB, STAGE_REPAIR, ALL_STAGES, STAGE_ORDER,
+    is_valid_transition, get_valid_next_stages,
+    ensure_tables as ensure_stage_tables,
+    load_previous_stage, save_stage, load_stage_history,
+    load_stage as load_stage_record,
+)
 
 try:
     from watchlist_store import list_positions, list_watchlist
@@ -832,7 +840,130 @@ def theme_status(score: float, heat: float, continuation: float, risk: float) ->
     return "观察支线"
 
 
-def factor_contribution(cluster: list[SectorScore]) -> dict[str, Any]:
+def determine_stage(
+    theme_score: float, heat: float, continuation: float, risk: float,
+    heat_trend_3d: float | None = None,
+    heat_trend_5d: float | None = None,
+    heat_trend_10d: float | None = None,
+    limit_count: int = 0, break_count: int = 0,
+    relay_lead_continue: float | None = None,
+    up_ratio: float = 0.5,
+    amount_ratio: float = 1.0,
+    catalyst_score: float = 0.0,
+    previous_stage: str | None = None,
+) -> dict[str, Any]:
+    """基于多维信号判断主线阶段，返回阶段、原因、迁移信号和置信度。
+
+    信号维度：
+    - 热度绝对水平和趋势（3/5/10 日）
+    - 延续性水平
+    - 风险扣分
+    - 涨停质量（数量、炸板率）
+    - 接力断裂（领涨延续率）
+    - 板块广度
+    - 成交额持续性
+    - 催化配合度
+    """
+    signals: list[str] = []
+    reasons: list[str] = []
+    stage_conf = 0.5
+
+    # ── 信号收集 ──
+    heat_rising_3d = heat_trend_3d is not None and heat_trend_3d > 0.5
+    heat_rising_5d = heat_trend_5d is not None and heat_trend_5d > 0
+    heat_falling_3d = heat_trend_3d is not None and heat_trend_3d < -0.5
+    heat_falling_5d = heat_trend_5d is not None and heat_trend_5d < 0
+    limit_quality = limit_count > 0 and (limit_count - break_count) / max(limit_count, 1) >= 0.7
+    high_relay = relay_lead_continue is not None and relay_lead_continue >= 0.6
+    low_relay = relay_lead_continue is not None and relay_lead_continue < 0.35
+    wide_breadth = up_ratio >= 0.6
+    amount_sustained = amount_ratio >= 1.2
+
+    # ── 阶段判断 ──
+    candidate = STAGE_STARTUP  # 默认
+
+    if risk >= 10:
+        candidate = STAGE_EBB
+        signals.append(f"风险扣分过高({risk:.1f})")
+        reasons.append("风险扣分>=10")
+        stage_conf = 0.75
+    elif heat >= 75 and continuation >= 65 and risk < 5 and limit_quality:
+        candidate = STAGE_CLIMAX
+        signals.append(f"热度极高({heat:.1f})+延续性好+风险低+涨停质量好")
+        reasons.append("热度>=75且延续>=65且风险<5且涨停质量好")
+        stage_conf = 0.70
+    elif heat >= 68 and heat_rising_3d and continuation >= 60 and risk < 7:
+        candidate = STAGE_ACCELERATE
+        signals.append(f"热度上升({heat:.1f})+延续性好+风险可控")
+        reasons.append("热度>=68且3日趋势上升且延续>=60且风险<7")
+        stage_conf = 0.65
+    elif heat >= 60 and heat_falling_3d and risk >= 5:
+        candidate = STAGE_DIVERGE
+        signals.append(f"热度下降({heat:.1f})+风险上升({risk:.1f})")
+        reasons.append("热度>=60且3日趋势下降且风险>=5")
+        stage_conf = 0.60
+    elif heat < 55 and risk >= 7:
+        candidate = STAGE_EBB
+        signals.append(f"热度低({heat:.1f})+风险高({risk:.1f})")
+        reasons.append("热度<55且风险>=7")
+        stage_conf = 0.70
+    elif heat >= 55 and heat_rising_5d and risk < 5 and wide_breadth:
+        candidate = STAGE_STARTUP
+        signals.append(f"热度启动({heat:.1f})+5日趋势上升+广度扩散")
+        reasons.append("热度>=55且5日上升且风险<5且广度>=60%")
+        stage_conf = 0.55
+    elif heat < 60 and risk < 5 and amount_sustained and continuation >= 50:
+        candidate = STAGE_REPAIR
+        signals.append(f"热度中等({heat:.1f})+风险低+成交额持续+延续性尚可")
+        reasons.append("热度<60且风险<5且成交放大且延续>=50")
+        stage_conf = 0.50
+    else:
+        # 兜底：根据 previous_stage 推断
+        if previous_stage in (STAGE_EBB, STAGE_DIVERGE):
+            candidate = STAGE_REPAIR
+        elif previous_stage in (STAGE_CLIMAX, STAGE_ACCELERATE):
+            candidate = STAGE_DIVERGE
+        else:
+            candidate = STAGE_STARTUP
+        reasons.append("默认推断")
+
+    # ── 接力断裂修正 ──
+    if low_relay and candidate in (STAGE_ACCELERATE, STAGE_CLIMAX):
+        candidate = STAGE_DIVERGE
+        signals.append("接力断裂(领涨延续率<35%)")
+        reasons.append("接力断裂降级为分歧")
+        stage_conf = min(stage_conf + 0.10, 0.85)
+
+    # ── 催化配合度提升 ──
+    if catalyst_score >= 60 and candidate == STAGE_STARTUP:
+        candidate = STAGE_ACCELERATE
+        signals.append(f"催化强度高({catalyst_score:.0f})")
+        reasons.append("催化强度提升阶段")
+
+    # ── 迁移合法性校验 ──
+    final_stage = candidate
+    if not is_valid_transition(previous_stage, candidate):
+        # 选择最接近的合法阶段
+        valid_next = get_valid_next_stages(previous_stage)
+        if valid_next:
+            final_stage = valid_next[0]
+            reasons.append(f"非法迁移{previous_stage}->{candidate}，修正为{final_stage}")
+        # 如果没有合法下一步（不应发生），保持原阶段
+        elif previous_stage and previous_stage in ALL_STAGES:
+            final_stage = previous_stage
+            reasons.append(f"无合法迁移，保持{previous_stage}")
+
+    # ── 构建结果 ──
+    all_signals = signals if signals else ["综合指标判断"]
+    all_reasons = "; ".join(reasons) if reasons else "综合判断"
+
+    return {
+        "stage": final_stage,
+        "previous_stage": previous_stage,
+        "stage_reason": all_reasons,
+        "transition_signals": all_signals,
+        "stage_confidence": round(stage_conf, 2),
+    }
     count = len(cluster)
     heat = defaultdict(float)
     continuation = defaultdict(float)
@@ -1142,6 +1273,50 @@ def build_themes_for_date(date: str) -> tuple[list[dict[str, Any]], dict[str, An
     themes.sort(key=lambda item: item["theme_score"], reverse=True)
     for rank, theme in enumerate(themes, start=1):
         theme["rank"] = rank
+
+    # ── 主线阶段有限状态机 ──
+    with sqlite3.connect(DB_PATH) as stage_conn:
+        ensure_stage_tables(stage_conn)
+        for theme in themes:
+            # 收集信号
+            stats = (theme["sectors"][0]["stats"] if theme["sectors"] else {})
+            relay = stats.get("relay_break", {})
+            prev_stage = load_previous_stage(stage_conn, trade_date, theme["theme_id"])
+            catalyst_score_val = 0.0
+            for c in theme.get("catalysts", []):
+                catalyst_score_val += 1  # 简化催化计数
+
+            stage_result = determine_stage(
+                theme_score=theme["theme_score"],
+                heat=theme["heat_score"],
+                continuation=theme["continuation_score"],
+                risk=theme["risk_penalty"],
+                limit_count=stats.get("limit_count", 0),
+                break_count=stats.get("break_count", 0),
+                relay_lead_continue=relay.get("lead_continue_rate"),
+                up_ratio=stats.get("up_ratio", 0.5),
+                amount_ratio=stats.get("amount_ratio", 1.0),
+                catalyst_score=catalyst_score_val,
+                previous_stage=prev_stage,
+            )
+            theme["stage"] = stage_result["stage"]
+            theme["previous_stage"] = stage_result["previous_stage"]
+            theme["stage_reason"] = stage_result["stage_reason"]
+            theme["transition_signals"] = stage_result["transition_signals"]
+            theme["stage_confidence"] = stage_result["stage_confidence"]
+
+            # 持久化
+            try:
+                save_stage(
+                    stage_conn, trade_date, theme["theme_id"],
+                    stage_result["stage"], stage_result["previous_stage"],
+                    stage_result["stage_reason"], stage_result["transition_signals"],
+                    stage_result["stage_confidence"],
+                    config.get("model_version", "v1.0-local"),
+                )
+            except ValueError:
+                pass  # 非法迁移仅跳过持久化，不中断评分
+
     return themes, market
 
 
