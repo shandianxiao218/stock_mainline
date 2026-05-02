@@ -969,6 +969,9 @@ def determine_stage(
         "transition_signals": all_signals,
         "stage_confidence": round(stage_conf, 2),
     }
+
+
+def factor_contribution(cluster: list[SectorScore]) -> dict[str, Any]:
     count = len(cluster)
     heat = defaultdict(float)
     continuation = defaultdict(float)
