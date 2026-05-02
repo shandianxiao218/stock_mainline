@@ -981,6 +981,8 @@ function formatBacktest(result) {
     return lines.join("\n") || JSON.stringify(result, null, 2);
   }
   const m = result.metrics;
+  const warnings = result.warnings || [];
+  const warningText = warnings.length ? ["", "⚠ 可信度警告：", ...warnings.map(w => `  - ${w}`)] : [];
   const lines = [
     `状态：${result.status}`,
     `样本数：${m.sample_count}`,
@@ -992,6 +994,7 @@ function formatBacktest(result) {
     `超额胜率：${(m.excess_win_rate * 100).toFixed(1)}%`,
     `最大回撤：${m.max_drawdown}%`,
     `Rank IC：${m.rank_ic}`,
+    ...warningText,
     "",
     "最近样本：",
     ...(result.samples || []).slice(-8).map((sample) =>

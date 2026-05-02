@@ -1684,6 +1684,18 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
                 "note": "可用交易日数量不足，无法完成指定持有周期回测。",
             }
 
+        # 检查板块成分历史版本覆盖
+        constituent_dates = set(
+            row[0] for row in conn.execute(
+                "select distinct as_of_date from em_sector_constituent_history"
+            ).fetchall()
+        )
+        constituent_warning = len(constituent_dates) <= 1
+        if constituent_warning:
+            constituent_dates_str = ", ".join(sorted(constituent_dates)[:5]) if constituent_dates else "无"
+        else:
+            constituent_dates_str = f"{len(constituent_dates)}个版本"
+
         samples = []
         all_rank_scores: list[float] = []
         all_future_returns: list[float] = []
@@ -1691,9 +1703,18 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
         equity_curve = []
         gap_dates: list[str] = []
         fallback_count = 0
+        cluster_versions_used: dict[str, int] = {}
         for idx, trade_date in enumerate(dates[:-holding_period]):
             exit_date = dates[idx + holding_period]
             date_str = date_text(trade_date)
+
+            # R-P2-1: 读取当日有效的自动聚合版本
+            from cluster_store import load_clusters as load_auto_clusters
+            auto_clusters = load_auto_clusters(conn, date_str)
+            cluster_version = 0
+            if auto_clusters:
+                cluster_version = auto_clusters[0].get("cluster_version", 0)
+                cluster_versions_used[date_str] = cluster_version
 
             # 优先读取预计算快照
             from snapshot_store import load_backtest_daily_snapshot, save_backtest_daily_snapshot
@@ -1767,6 +1788,18 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
         "max_drawdown": round(max_drawdown(equity_curve) * 100, 3),
         "rank_ic": round(pearson(all_rank_scores, all_future_returns), 4) if len(all_rank_scores) >= 3 else None,
     }
+    # 构建回测可信度标签
+    no_future_leak_status = "verified" if not constituent_warning and fallback_count == 0 else "warning"
+    warnings = []
+    if constituent_warning:
+        warnings.append(f"板块成分仅有{constituent_dates_str}历史版本，长周期回测存在成分版本风险")
+    if fallback_count > 0:
+        warnings.append(f"有 {fallback_count} 个交易日无预计算快照，使用了实时重算")
+
+    note = "回测基于当前 SQLite 可用日线区间逐日重放；不会使用评分日之后的数据计算当日排名。"
+    if warnings:
+        note += " ⚠ " + "; ".join(warnings)
+
     return {
         "task_id": "local_sqlite_backtest",
         "status": "completed",
@@ -1775,7 +1808,10 @@ def backtest_result(body: dict[str, Any]) -> dict[str, Any]:
         "samples": samples[-20:],
         "fallback_count": fallback_count,
         "gap_dates": gap_dates[-20:],
-        "note": "回测基于当前 SQLite 可用日线区间逐日重放；不会使用评分日之后的数据计算当日排名。",
+        "cluster_versions_used": cluster_versions_used,
+        "no_future_leak_status": no_future_leak_status,
+        "warnings": warnings,
+        "note": note,
     }
 
 
