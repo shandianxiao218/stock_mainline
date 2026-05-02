@@ -386,6 +386,17 @@ class RadarHandler(BaseHTTPRequestHandler):
         if path == "/api/v1/snapshots/status":
             return self.send_json(snapshot_status(date))
 
+        if path == "/api/v1/snapshots/invalidation-status":
+            from snapshot_store import snapshot_invalidation_status
+            return self.send_json(snapshot_invalidation_status(date))
+
+        if path == "/api/v1/snapshots/cold-start":
+            if not self.require_permission("run_backtest"):
+                return
+            from snapshot_store import cold_start_build
+            result = cold_start_build(date)
+            return self.send_json(result)
+
         if path == "/api/v1/backtest/runs":
             if not self.require_permission("run_backtest"):
                 return

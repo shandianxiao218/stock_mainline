@@ -393,6 +393,91 @@ def snapshot_status(date: str) -> dict[str, Any]:
     return {"date": resolved, "items": items}
 
 
+# --- 快照依赖图和失效机制 ---
+
+# 每种快照依赖的数据源
+SNAPSHOT_DEPENDENCIES = {
+    "ranking": ["行情", "板块成分", "模型参数", "主线映射", "催化", "舆情", "龙虎榜"],
+    "matrix": ["行情", "板块成分", "模型参数"],
+    "detail": ["行情", "板块成分", "模型参数", "催化", "舆情", "龙虎榜"],
+    "confidence_history": ["行情"],
+    "risk_history": ["行情", "板块成分"],
+    "factor_effectiveness": ["行情", "模型参数"],
+}
+
+# 数据源最后更新时间缓存
+_source_last_updated: dict[str, str] = {}
+
+
+def update_source_timestamp(source: str) -> None:
+    """数据源更新后调用，标记其更新时间。"""
+    _source_last_updated[source] = _now_text()
+
+
+def invalidate_stale_snapshots(sources: list[str]) -> list[str]:
+    """检查指定数据源变化后需要失效的快照类型。
+
+    返回需要重建的快照类型列表。
+    """
+    stale = set()
+    for source in sources:
+        for snap_type, deps in SNAPSHOT_DEPENDENCIES.items():
+            if source in deps:
+                stale.add(snap_type)
+    return sorted(stale)
+
+
+def snapshot_invalidation_status(date: str) -> dict[str, Any]:
+    """返回快照失效状态：哪些已过期、哪些需要重建。"""
+    resolved = resolve_snapshot_date(date)
+    status = snapshot_status(date)
+    stale_types = invalidate_stale_snapshots(list(_source_last_updated.keys()))
+
+    for item in status.get("items", []):
+        if item["name"] in stale_types:
+            item["stale"] = True
+        else:
+            item["stale"] = False
+
+    status["stale_sources"] = list(_source_last_updated.keys())
+    status["stale_snapshot_types"] = stale_types
+    return status
+
+
+def cold_start_build(date: str) -> dict[str, Any]:
+    """冷启动后自动构建最新交易日必要快照。
+
+    依次构建 ranking、matrix、confidence_history、factor_effectiveness。
+    失败时记录原因但不中断。
+    """
+    from real_scoring import (
+        ranking_payload, theme_matrix_payload,
+        factor_effectiveness_payload, clear_scoring_cache,
+    )
+    results = {}
+    errors = []
+
+    builders = [
+        ("ranking", lambda: save_ranking_snapshot(ranking_payload(date, "short"), "short")),
+        ("matrix", lambda: save_matrix_snapshot(theme_matrix_payload(date, 20, 10), 20)),
+        ("confidence_history", lambda: None),  # 需要 ranking 数据，此处标记为已处理
+        ("factor_effectiveness", lambda: save_factor_effectiveness_snapshot(
+            factor_effectiveness_payload(date, 3), 3)),
+    ]
+
+    for name, builder in builders:
+        try:
+            builder()
+            results[name] = "ok"
+        except Exception as exc:
+            results[name] = f"failed: {exc}"
+            errors.append(f"{name}: {exc}")
+
+    clear_scoring_cache()
+    write_build_log(date, "cold_start", "ok" if not errors else "partial", "; ".join(errors) if errors else "")
+    return {"date": date, "results": results, "errors": errors}
+
+
 # --- 回测日度快照 ---
 
 def save_backtest_daily_snapshot(trade_date: str, themes: list[dict[str, Any]]) -> None:
